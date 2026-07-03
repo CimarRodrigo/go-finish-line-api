@@ -3,3 +3,7 @@ bin/
 .DS_Store
 coverage.out
 .atl/
+.agents/
+.claude/
+schema.sql
+skills-lock.json
