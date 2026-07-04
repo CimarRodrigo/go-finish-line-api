@@ -16,6 +16,17 @@ type Config struct {
 	AppPort string
 	DB      DBConfig
 	Auth    AuthConfig
+	Strapi  StrapiConfig
+	Email   EmailConfig
+}
+
+type StrapiConfig struct {
+	WebhookSecret string
+}
+
+type EmailConfig struct {
+	ResendAPIKey string
+	From         string
 }
 
 type AuthConfig struct {
@@ -67,6 +78,13 @@ func Load() (*Config, error) {
 			JWTSecret:  getEnv("JWT_SECRET", "dev-insecure-secret-change-me"),
 			AccessTTL:  getEnvDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 			RefreshTTL: getEnvDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour),
+		},
+		Strapi: StrapiConfig{
+			WebhookSecret: getEnv("STRAPI_WEBHOOK_SECRET", "dev-insecure-webhook-secret"),
+		},
+		Email: EmailConfig{
+			ResendAPIKey: getEnv("RESEND_API_KEY", ""),
+			From:         getEnv("EMAIL_FROM", "no-reply@finishline.dev"),
 		},
 	}, nil
 }

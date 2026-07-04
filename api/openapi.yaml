@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: FinishLine API
   description: Backend for footrace participant registration.
-  version: 0.4.0
+  version: 0.5.0
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -13,7 +13,126 @@ tags:
     description: Authentication — login, token refresh
   - name: users
     description: Admin user management
+  - name: registrations
+    description: Public race registration and the admin report
+  - name: webhooks
+    description: Inbound machine-to-machine events
 paths:
+  /api/v1/registrations:
+    post:
+      operationId: register
+      summary: Register for a race (public)
+      description: >-
+        Public endpoint for the registration form. Upserts the person by email
+        (one participant per email) and creates their registration for the
+        race. Free races are confirmed immediately, assigning a sequential
+        dorsal and sending a confirmation email.
+      tags:
+        - registrations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registered (and confirmed, for free races)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistrationResponse"
+        "400":
+          description: Malformed body, invalid race id, bad birth_date, or a form validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: birth date cannot be in the future
+        "404":
+          description: The referenced race does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: race not found
+        "409":
+          description: Already registered for this race, or the race is full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: already registered for this race
+    get:
+      operationId: listRegistrations
+      summary: Admin report — a race's registrations with dorsals
+      tags:
+        - registrations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: race_id
+          in: query
+          required: true
+          description: The race to report on
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Registrations for the race, ordered by dorsal
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RegistrationReportRow"
+        "400":
+          description: Missing or invalid race_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/webhooks/strapi:
+    post:
+      operationId: strapiWebhook
+      summary: Sync a race from Strapi
+      description: >-
+        Machine-to-machine endpoint called by Strapi on race entry events.
+        Authenticated by a shared secret in the `X-Webhook-Secret` header (not
+        a user token). Create/update/publish events upsert the local race
+        reference; delete/unpublish events remove it. Unknown events are
+        acknowledged and ignored.
+      tags:
+        - webhooks
+      parameters:
+        - name: X-Webhook-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StrapiWebhook"
+      responses:
+        "200":
+          description: Event processed (synced, removed, or ignored)
+        "400":
+          description: Invalid payload or missing entry id
+        "401":
+          description: Missing or wrong webhook secret
   /api/v1/auth/login:
     post:
       operationId: login
@@ -324,6 +443,143 @@ components:
           type: string
           format: date-time
           example: "2026-06-13T22:16:56Z"
+    RegisterRequest:
+      type: object
+      required:
+        - race_id
+        - first_names
+        - last_names
+        - email
+        - phone
+        - birth_date
+        - gender
+        - referral_source
+        - ticket_type
+      properties:
+        race_id:
+          type: string
+          format: uuid
+        first_names:
+          type: string
+          example: Amir
+        last_names:
+          type: string
+          example: Rojas
+        email:
+          type: string
+          format: email
+          example: amir@example.com
+        phone:
+          type: string
+          example: "+59171234567"
+        birth_date:
+          type: string
+          format: date
+          description: ISO date, YYYY-MM-DD
+          example: "2000-06-09"
+        gender:
+          type: string
+          enum: [M, F, X]
+        referral_source:
+          type: string
+          example: Instagram
+        ticket_type:
+          type: string
+          example: INSCRIPCION
+    RegistrationResponse:
+      type: object
+      properties:
+        registration_id:
+          type: string
+          format: uuid
+        race_id:
+          type: string
+          format: uuid
+        first_names:
+          type: string
+        last_names:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        gender:
+          type: string
+          enum: [M, F, X]
+        status:
+          type: string
+          enum: [pendiente, confirmado]
+        dorsal:
+          type: integer
+          nullable: true
+          description: Assigned on confirmation; null while pending
+        created_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+    RegistrationReportRow:
+      type: object
+      properties:
+        registration_id:
+          type: string
+          format: uuid
+        first_names:
+          type: string
+        last_names:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        gender:
+          type: string
+          enum: [M, F, X]
+        status:
+          type: string
+          enum: [pendiente, confirmado]
+        dorsal:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+    StrapiWebhook:
+      type: object
+      required:
+        - event
+        - entry
+      properties:
+        event:
+          type: string
+          example: entry.create
+        model:
+          type: string
+          example: race
+        entry:
+          type: object
+          properties:
+            documentId:
+              type: string
+              description: Stable Strapi v5 id (preferred)
+            id:
+              type: integer
+              description: Numeric id (Strapi v4 fallback)
+            nombre:
+              type: string
+            fecha:
+              type: string
+              format: date
+            capacidad:
+              type: integer
     HealthStatus:
       type: object
       required:

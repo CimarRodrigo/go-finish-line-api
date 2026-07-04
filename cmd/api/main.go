@@ -20,10 +20,18 @@ import (
 	authrest "finish-line/internal/auth/adapters/rest"
 	authservice "finish-line/internal/auth/service"
 	"finish-line/internal/common/config"
+	"finish-line/internal/common/email"
 	"finish-line/internal/common/postgres"
 	"finish-line/internal/common/ratelimit"
 	"finish-line/internal/common/security"
 	"finish-line/internal/common/server"
+	participantnotification "finish-line/internal/participant/adapters/notification"
+	participantpostgres "finish-line/internal/participant/adapters/postgres"
+	participantrest "finish-line/internal/participant/adapters/rest"
+	participantservice "finish-line/internal/participant/service"
+	racepostgres "finish-line/internal/race/adapters/postgres"
+	racerest "finish-line/internal/race/adapters/rest"
+	raceservice "finish-line/internal/race/service"
 	userpostgres "finish-line/internal/user/adapters/postgres"
 	userrest "finish-line/internal/user/adapters/rest"
 	userservice "finish-line/internal/user/service"
@@ -81,7 +89,12 @@ func run() error {
 	// must ship as explicit, reviewed migrations. Register each module's
 	// migration here in dependency order (users before refresh_tokens).
 	if !cfg.IsProduction() {
-		if err := postgres.RunMigrations(db, userpostgres.Migrate, authpostgres.Migrate); err != nil {
+		if err := postgres.RunMigrations(db,
+			userpostgres.Migrate,
+			authpostgres.Migrate,
+			racepostgres.Migrate,
+			participantpostgres.Migrate,
+		); err != nil {
 			return fmt.Errorf("running dev migrations: %w", err)
 		}
 		if err := userSvc.EnsureAdmin(ctx, "Admin", "admin@finishline.dev", "admin.123"); err != nil {
@@ -93,14 +106,42 @@ func run() error {
 	// Throttle login attempts per IP to blunt brute-force password guessing.
 	loginLimiter := ratelimit.PerIP(rate.Every(time.Second), 5)
 
+	raceSvc := raceservice.New(racepostgres.NewRepository(db))
+
+	// Email: use Resend when configured, otherwise log messages so local dev
+	// needs no API key.
+	var emailSender email.Sender
+	if cfg.Email.ResendAPIKey != "" {
+		emailSender = email.NewResendSender(cfg.Email.ResendAPIKey, cfg.Email.From)
+	} else {
+		logger.Warn("RESEND_API_KEY not set — emails will be logged, not sent")
+		emailSender = email.NewLogSender()
+	}
+
+	// Participant module reuses the race service (as a RaceFinder) and sends
+	// confirmations through the notification adapter.
+	participantSvc := participantservice.New(
+		participantpostgres.NewParticipantRepository(db),
+		participantpostgres.NewRegistrationRepository(db),
+		raceSvc,
+		participantnotification.NewConfirmationNotifier(emailSender),
+	)
+
+	authMW := authmiddleware.RequireAuth(authSvc)
+
 	userModule := userrest.NewHandler(userSvc)
 	authModule := authrest.NewHandler(authSvc, cfg.Auth.RefreshTTL, cfg.IsProduction(), loginLimiter)
-	authMW := authmiddleware.RequireAuth(authSvc)
+	// The Strapi webhook authenticates with its own shared secret, so the
+	// race module registers as public — not behind the admin JWT middleware.
+	raceModule := racerest.NewHandler(raceSvc, cfg.Strapi.WebhookSecret)
+	// Registration is public; the participant handler guards its own admin
+	// report route with the auth middleware.
+	participantModule := participantrest.NewHandler(participantSvc, authMW)
 
 	srv := &http.Server{
 		Addr: ":" + cfg.AppPort,
 		Handler: server.New(logger, db, authMW, server.Modules{
-			Public:    []server.RouteRegistrar{authModule},
+			Public:    []server.RouteRegistrar{authModule, raceModule, participantModule},
 			Protected: []server.RouteRegistrar{userModule},
 		}),
 		ReadTimeout:  10 * time.Second,
