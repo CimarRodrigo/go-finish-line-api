@@ -1,0 +1,95 @@
+package postgres
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+
+	"finish-line/internal/participant/domain"
+)
+
+// participantModel is the person, deduplicated by a globally unique email.
+type participantModel struct {
+	ID         uuid.UUID `gorm:"column:id;type:uuid;primaryKey"`
+	FirstNames string    `gorm:"column:nombres;type:text;not null"`
+	LastNames  string    `gorm:"column:apellidos;type:text;not null"`
+	Email      string    `gorm:"column:email;type:citext;not null;uniqueIndex"`
+	Phone      string    `gorm:"column:telefono;type:text;not null"`
+	BirthDate  time.Time `gorm:"column:fecha_nacimiento;type:date;not null"`
+	Gender     string    `gorm:"column:genero;type:text;not null"`
+	CreatedAt  time.Time `gorm:"column:created_at;type:timestamptz;not null"`
+}
+
+func (participantModel) TableName() string { return "participants" }
+
+// registrationModel is the N:M participation. Two composite unique indexes:
+//   - (race_id, participant_id) → one registration per person per race
+//   - (race_id, dorsal)         → no duplicate dorsals in a race (NULLs
+//     distinct, so many pending rows are allowed)
+type registrationModel struct {
+	ID             uuid.UUID  `gorm:"column:id;type:uuid;primaryKey"`
+	ParticipantID  uuid.UUID  `gorm:"column:participant_id;type:uuid;not null;uniqueIndex:uq_registration_race_participant"`
+	RaceID         uuid.UUID  `gorm:"column:race_id;type:uuid;not null;uniqueIndex:uq_registration_race_participant;uniqueIndex:uq_registration_race_dorsal"`
+	ReferralSource string     `gorm:"column:como_te_enteraste;type:text;not null"`
+	TicketType     string     `gorm:"column:ticket;type:text;not null"`
+	Status         string     `gorm:"column:estado;type:text;not null"`
+	Dorsal         *int       `gorm:"column:dorsal;type:integer;uniqueIndex:uq_registration_race_dorsal"`
+	CreatedAt      time.Time  `gorm:"column:created_at;type:timestamptz;not null"`
+	ConfirmedAt    *time.Time `gorm:"column:confirmed_at;type:timestamptz"`
+}
+
+func (registrationModel) TableName() string { return "registrations" }
+
+func toParticipantModel(p *domain.Participant) participantModel {
+	return participantModel{
+		ID:         p.ID,
+		FirstNames: p.FirstNames,
+		LastNames:  p.LastNames,
+		Email:      p.Email,
+		Phone:      p.Phone,
+		BirthDate:  p.BirthDate,
+		Gender:     string(p.Gender),
+		CreatedAt:  p.CreatedAt,
+	}
+}
+
+func toParticipantDomain(m participantModel) *domain.Participant {
+	return &domain.Participant{
+		ID:         m.ID,
+		FirstNames: m.FirstNames,
+		LastNames:  m.LastNames,
+		Email:      m.Email,
+		Phone:      m.Phone,
+		BirthDate:  m.BirthDate,
+		Gender:     domain.Gender(m.Gender),
+		CreatedAt:  m.CreatedAt,
+	}
+}
+
+func toRegistrationModel(r *domain.Registration) registrationModel {
+	return registrationModel{
+		ID:             r.ID,
+		ParticipantID:  r.ParticipantID,
+		RaceID:         r.RaceID,
+		ReferralSource: r.ReferralSource,
+		TicketType:     r.TicketType,
+		Status:         string(r.Status),
+		Dorsal:         r.Dorsal,
+		CreatedAt:      r.CreatedAt,
+		ConfirmedAt:    r.ConfirmedAt,
+	}
+}
+
+func toRegistrationDomain(m registrationModel) *domain.Registration {
+	return &domain.Registration{
+		ID:             m.ID,
+		ParticipantID:  m.ParticipantID,
+		RaceID:         m.RaceID,
+		ReferralSource: m.ReferralSource,
+		TicketType:     m.TicketType,
+		Status:         domain.Status(m.Status),
+		Dorsal:         m.Dorsal,
+		CreatedAt:      m.CreatedAt,
+		ConfirmedAt:    m.ConfirmedAt,
+	}
+}
