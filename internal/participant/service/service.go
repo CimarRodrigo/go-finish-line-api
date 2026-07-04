@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -34,6 +35,9 @@ func New(
 	}
 }
 
+// maxConfirmAttempts bounds the optimistic dorsal-assignment retry loop.
+const maxConfirmAttempts = 5
+
 // RegisterInput carries the public registration form data.
 type RegisterInput struct {
 	RaceID         uuid.UUID
@@ -44,7 +48,6 @@ type RegisterInput struct {
 	BirthDate      time.Time
 	Gender         string
 	ReferralSource string
-	TicketType     string
 }
 
 // Result is a completed registration: the person, their participation, and
@@ -82,7 +85,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, erro
 		return nil, fmt.Errorf("upserting participant: %w", err)
 	}
 
-	reg, err := domain.NewRegistration(person.ID, in.RaceID, in.ReferralSource, in.TicketType)
+	reg, err := domain.NewRegistration(person.ID, in.RaceID, in.ReferralSource)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +94,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, erro
 		return nil, fmt.Errorf("creating registration: %w", err)
 	}
 
-	return s.confirm(ctx, reg, person, race)
+	return s.confirm(ctx, reg.ID, person, race)
 }
 
 // Confirm is the single confirmation point (the payment seam): free
@@ -113,31 +116,48 @@ func (s *Service) Confirm(ctx context.Context, registrationID uuid.UUID) (*Resul
 		return nil, fmt.Errorf("getting participant: %w", err)
 	}
 
-	return s.confirm(ctx, reg, person, race)
+	return s.confirm(ctx, registrationID, person, race)
 }
 
-func (s *Service) confirm(ctx context.Context, reg *domain.Registration, person *domain.Participant, race *racedomain.Race) (*Result, error) {
-	// The service orchestrates confirmation: the repository reserves the next
-	// dorsal atomically and calls back into the domain, which owns the rules
-	// (double-confirm, capacity, dorsal validity).
-	confirmed, err := s.registrations.ConfirmNext(ctx, reg.ID, func(r *domain.Registration, nextDorsal int) error {
-		return r.Confirm(nextDorsal, race.Capacity, time.Now())
-	})
-	if err != nil {
-		return nil, fmt.Errorf("confirming registration: %w", err)
+// confirm assigns a dorsal and confirms the registration. It reads the next
+// dorsal, lets the domain confirm, and saves; if a concurrent registration
+// grabbed that dorsal first, it retries with a fresh number. Correctness comes
+// from the unique (race_id, dorsal) constraint — the loser simply tries again.
+func (s *Service) confirm(ctx context.Context, registrationID uuid.UUID, person *domain.Participant, race *racedomain.Race) (*Result, error) {
+	for range maxConfirmAttempts {
+		reg, err := s.registrations.ByID(ctx, registrationID)
+		if err != nil {
+			return nil, fmt.Errorf("getting registration: %w", err)
+		}
+
+		next, err := s.registrations.NextDorsal(ctx, race.ID)
+		if err != nil {
+			return nil, fmt.Errorf("getting next dorsal: %w", err)
+		}
+
+		if err := reg.Confirm(next, race.Capacity, time.Now()); err != nil {
+			return nil, err // already confirmed or full — a real error, not a retry
+		}
+
+		err = s.registrations.SaveConfirmation(ctx, reg)
+		switch {
+		case err == nil:
+			// Best effort: the registration is confirmed regardless of whether
+			// the notification could be delivered.
+			if nerr := s.notifier.SendConfirmation(ctx, person, reg, race); nerr != nil {
+				slog.Error("sending confirmation notification",
+					"registration", reg.ID, "race", race.ID, "error", nerr)
+			}
+			return &Result{Participant: person, Registration: reg, Race: race}, nil
+		case errors.Is(err, domain.ErrDorsalTaken):
+			continue // another registration took this dorsal; retry with a fresh number
+		default:
+			return nil, fmt.Errorf("confirming registration: %w", err)
+		}
 	}
 
-	// Best effort: the registration is confirmed regardless of whether the
-	// notification could be delivered.
-	if err := s.notifier.SendConfirmation(ctx, person, confirmed, race); err != nil {
-		slog.Error("sending confirmation notification",
-			"registration", confirmed.ID,
-			"race", race.ID,
-			"error", err,
-		)
-	}
-
-	return &Result{Participant: person, Registration: confirmed, Race: race}, nil
+	// Sustained contention: treat as the race being full.
+	return nil, domain.ErrRaceFull
 }
 
 // ByRace lists a race's registrations with their people — the admin report.

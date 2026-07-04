@@ -14,7 +14,6 @@ type Registration struct {
 	ParticipantID  uuid.UUID
 	RaceID         uuid.UUID
 	ReferralSource string
-	TicketType     string
 	Status         Status
 	Dorsal         *int
 	CreatedAt      time.Time
@@ -22,7 +21,7 @@ type Registration struct {
 }
 
 // NewRegistration builds a valid pending registration.
-func NewRegistration(participantID, raceID uuid.UUID, referralSource, ticketType string) (*Registration, error) {
+func NewRegistration(participantID, raceID uuid.UUID, referralSource string) (*Registration, error) {
 	if participantID == uuid.Nil {
 		return nil, ErrParticipantRequired
 	}
@@ -35,17 +34,11 @@ func NewRegistration(participantID, raceID uuid.UUID, referralSource, ticketType
 		return nil, ErrReferralRequired
 	}
 
-	ticket := strings.TrimSpace(ticketType)
-	if ticket == "" {
-		return nil, ErrTicketRequired
-	}
-
 	return &Registration{
 		ID:             uuid.New(),
 		ParticipantID:  participantID,
 		RaceID:         raceID,
 		ReferralSource: referral,
-		TicketType:     ticket,
 		Status:         StatusPending,
 		CreatedAt:      time.Now().UTC(),
 	}, nil
@@ -54,7 +47,7 @@ func NewRegistration(participantID, raceID uuid.UUID, referralSource, ticketType
 // Confirm transitions the registration to confirmed with its dorsal. All the
 // business rules of confirmation live here: it refuses to run twice, rejects a
 // non-positive dorsal, and rejects a dorsal beyond the race capacity (the race
-// is full). The adapter only supplies the candidate dorsal and capacity; the
+// is full). The service supplies the candidate dorsal and capacity; the
 // decision is the domain's.
 func (r *Registration) Confirm(dorsal, capacity int, at time.Time) error {
 	if r.Status == StatusConfirmed {

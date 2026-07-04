@@ -67,17 +67,14 @@ func (f *fakeRegistrations) ByID(_ context.Context, id uuid.UUID) (*domain.Regis
 	return r, nil
 }
 
-func (f *fakeRegistrations) ConfirmNext(_ context.Context, id uuid.UUID, confirm func(reg *domain.Registration, nextDorsal int) error) (*domain.Registration, error) {
-	r, ok := f.byID[id]
-	if !ok {
-		return nil, domain.ErrNotFound
-	}
-	// Mirror the adapter: provide the candidate dorsal, let the domain decide.
-	if err := confirm(r, f.nextDorsal+1); err != nil {
-		return nil, err
-	}
+func (f *fakeRegistrations) NextDorsal(_ context.Context, _ uuid.UUID) (int, error) {
+	return f.nextDorsal + 1, nil
+}
+
+func (f *fakeRegistrations) SaveConfirmation(_ context.Context, r *domain.Registration) error {
 	f.nextDorsal++
-	return r, nil
+	f.byID[r.ID] = r
+	return nil
 }
 
 func (f *fakeRegistrations) ByRace(_ context.Context, _ uuid.UUID) ([]domain.RegistrationDetail, error) {
@@ -111,7 +108,7 @@ func validInput(raceID uuid.UUID) service.RegisterInput {
 	return service.RegisterInput{
 		RaceID: raceID, FirstNames: "Amir", LastNames: "Rojas", Email: "amir@example.com",
 		Phone: "+59171234567", BirthDate: time.Date(2000, 6, 9, 0, 0, 0, 0, time.UTC),
-		Gender: "M", ReferralSource: "Instagram", TicketType: "INSCRIPCION",
+		Gender: "M", ReferralSource: "Instagram",
 	}
 }
 

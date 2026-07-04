@@ -1,6 +1,10 @@
 package domain
 
-import "finish-line/internal/apperr"
+import (
+	"errors"
+
+	"finish-line/internal/apperr"
+)
 
 var (
 	ErrParticipantRequired  = apperr.New(apperr.KindValidation, "participant is required")
@@ -13,7 +17,6 @@ var (
 	ErrBirthDateUnrealistic = apperr.New(apperr.KindValidation, "birth date is not realistic")
 	ErrGenderInvalid        = apperr.New(apperr.KindValidation, "gender must be M, F or X")
 	ErrReferralRequired     = apperr.New(apperr.KindValidation, "referral source is required")
-	ErrTicketRequired       = apperr.New(apperr.KindValidation, "ticket type is required")
 	ErrDorsalInvalid        = apperr.New(apperr.KindValidation, "dorsal must be greater than zero")
 
 	ErrAlreadyRegistered = apperr.New(apperr.KindConflict, "already registered for this race")
@@ -22,3 +25,8 @@ var (
 
 	ErrNotFound = apperr.New(apperr.KindNotFound, "registration not found")
 )
+
+// ErrDorsalTaken is an internal signal that a concurrent registration grabbed
+// the dorsal we tried to save. The service retries on it; it never reaches a
+// client.
+var ErrDorsalTaken = errors.New("dorsal already taken")

@@ -20,7 +20,6 @@ type registerRequest struct {
 	BirthDate      string `json:"birth_date" binding:"required"`
 	Gender         string `json:"gender" binding:"required"`
 	ReferralSource string `json:"referral_source" binding:"required"`
-	TicketType     string `json:"ticket_type" binding:"required"`
 }
 
 // registrationResponse is what a successful registration returns: the person

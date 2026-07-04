@@ -48,7 +48,7 @@ func setupRouter(svc *fakeService) *gin.Engine {
 }
 
 func validBody(raceID string) string {
-	return `{"race_id":"` + raceID + `","first_names":"Amir","last_names":"Rojas","email":"amir@example.com","phone":"+59171234567","birth_date":"2000-06-09","gender":"M","referral_source":"Instagram","ticket_type":"INSCRIPCION"}`
+	return `{"race_id":"` + raceID + `","first_names":"Amir","last_names":"Rojas","email":"amir@example.com","phone":"+59171234567","birth_date":"2000-06-09","gender":"M","referral_source":"Instagram"}`
 }
 
 func TestRegister(t *testing.T) {

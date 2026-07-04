@@ -454,7 +454,6 @@ components:
         - birth_date
         - gender
         - referral_source
-        - ticket_type
       properties:
         race_id:
           type: string
@@ -483,9 +482,6 @@ components:
         referral_source:
           type: string
           example: Instagram
-        ticket_type:
-          type: string
-          example: INSCRIPCION
     RegistrationResponse:
       type: object
       properties:

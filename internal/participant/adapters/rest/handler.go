@@ -65,7 +65,6 @@ func (h *Handler) register(c *gin.Context) {
 		BirthDate:      birthDate,
 		Gender:         req.Gender,
 		ReferralSource: req.ReferralSource,
-		TicketType:     req.TicketType,
 	})
 	if err != nil {
 		httpx.RespondError(c, err)

@@ -47,68 +47,39 @@ func (r *RegistrationRepository) ByID(ctx context.Context, id uuid.UUID) (*domai
 	return toRegistrationDomain(m), nil
 }
 
-// ConfirmNext provides the atomic infrastructure for confirmation and leaves
-// the decision to the domain. It serializes on a per-race advisory lock,
-// computes the candidate next dorsal, and calls confirm with the loaded
-// registration and that candidate. Whatever state the domain sets is then
-// persisted. No business rule lives here — the lock, the transaction and the
-// MAX(dorsal) query are pure infrastructure.
-func (r *RegistrationRepository) ConfirmNext(ctx context.Context, id uuid.UUID, confirm func(reg *domain.Registration, nextDorsal int) error) (*domain.Registration, error) {
-	var out *domain.Registration
-
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Find the race so we can lock on it. Take the lock BEFORE reading the
-		// full registration, so a concurrent confirmation of the same race
-		// reads committed state, not a stale snapshot.
-		var head registrationModel
-		if err := tx.Select("race_id").First(&head, "id = ?", id).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return domain.ErrNotFound
-			}
-			return fmt.Errorf("loading registration: %w", err)
-		}
-
-		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, head.RaceID.String()).Error; err != nil {
-			return fmt.Errorf("locking race for dorsal allocation: %w", err)
-		}
-
-		var m registrationModel
-		if err := tx.First(&m, "id = ?", id).Error; err != nil {
-			return fmt.Errorf("reloading registration under lock: %w", err)
-		}
-		reg := toRegistrationDomain(m)
-
-		var maxDorsal int
-		if err := tx.Model(&registrationModel{}).
-			Where("race_id = ? AND dorsal IS NOT NULL", reg.RaceID).
-			Select("COALESCE(MAX(dorsal), 0)").
-			Scan(&maxDorsal).Error; err != nil {
-			return fmt.Errorf("reading current dorsal: %w", err)
-		}
-
-		// The domain decides — capacity, double-confirm and dorsal validity
-		// are all checked in Registration.Confirm.
-		if err := confirm(reg, maxDorsal+1); err != nil {
-			return err
-		}
-
-		if err := tx.Model(&registrationModel{}).
-			Where("id = ?", id).
-			Updates(map[string]any{
-				"estado":       string(reg.Status),
-				"dorsal":       reg.Dorsal,
-				"confirmed_at": reg.ConfirmedAt,
-			}).Error; err != nil {
-			return fmt.Errorf("persisting confirmation: %w", err)
-		}
-
-		out = reg
-		return nil
-	})
-	if err != nil {
-		return nil, err
+// NextDorsal returns the next candidate dorsal for a race — the current
+// highest confirmed dorsal plus one. Pure infrastructure: it reserves nothing.
+func (r *RegistrationRepository) NextDorsal(ctx context.Context, raceID uuid.UUID) (int, error) {
+	var maxDorsal int
+	if err := r.db.WithContext(ctx).
+		Model(&registrationModel{}).
+		Where("race_id = ? AND dorsal IS NOT NULL", raceID).
+		Select("COALESCE(MAX(dorsal), 0)").
+		Scan(&maxDorsal).Error; err != nil {
+		return 0, fmt.Errorf("reading max dorsal: %w", err)
 	}
-	return out, nil
+	return maxDorsal + 1, nil
+}
+
+// SaveConfirmation persists a confirmed registration. If a concurrent
+// registration already took this dorsal, the (race_id, dorsal) unique
+// constraint fires and we surface ErrDorsalTaken for the service to retry.
+func (r *RegistrationRepository) SaveConfirmation(ctx context.Context, reg *domain.Registration) error {
+	err := r.db.WithContext(ctx).
+		Model(&registrationModel{}).
+		Where("id = ?", reg.ID).
+		Updates(map[string]any{
+			"estado":       string(reg.Status),
+			"dorsal":       reg.Dorsal,
+			"confirmed_at": reg.ConfirmedAt,
+		}).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return domain.ErrDorsalTaken
+		}
+		return fmt.Errorf("saving confirmation: %w", err)
+	}
+	return nil
 }
 
 // reportRow is the flat shape of the report join.

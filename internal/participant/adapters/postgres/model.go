@@ -31,7 +31,6 @@ type registrationModel struct {
 	ParticipantID  uuid.UUID  `gorm:"column:participant_id;type:uuid;not null;uniqueIndex:uq_registration_race_participant"`
 	RaceID         uuid.UUID  `gorm:"column:race_id;type:uuid;not null;uniqueIndex:uq_registration_race_participant;uniqueIndex:uq_registration_race_dorsal"`
 	ReferralSource string     `gorm:"column:como_te_enteraste;type:text;not null"`
-	TicketType     string     `gorm:"column:ticket;type:text;not null"`
 	Status         string     `gorm:"column:estado;type:text;not null"`
 	Dorsal         *int       `gorm:"column:dorsal;type:integer;uniqueIndex:uq_registration_race_dorsal"`
 	CreatedAt      time.Time  `gorm:"column:created_at;type:timestamptz;not null"`
@@ -72,7 +71,6 @@ func toRegistrationModel(r *domain.Registration) registrationModel {
 		ParticipantID:  r.ParticipantID,
 		RaceID:         r.RaceID,
 		ReferralSource: r.ReferralSource,
-		TicketType:     r.TicketType,
 		Status:         string(r.Status),
 		Dorsal:         r.Dorsal,
 		CreatedAt:      r.CreatedAt,
@@ -86,7 +84,6 @@ func toRegistrationDomain(m registrationModel) *domain.Registration {
 		ParticipantID:  m.ParticipantID,
 		RaceID:         m.RaceID,
 		ReferralSource: m.ReferralSource,
-		TicketType:     m.TicketType,
 		Status:         domain.Status(m.Status),
 		Dorsal:         m.Dorsal,
 		CreatedAt:      m.CreatedAt,

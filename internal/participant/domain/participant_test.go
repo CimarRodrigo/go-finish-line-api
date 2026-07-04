@@ -62,7 +62,7 @@ func TestNewRegistration(t *testing.T) {
 	participantID, raceID := uuid.New(), uuid.New()
 
 	t.Run("valid registration is pending without a dorsal", func(t *testing.T) {
-		r, err := domain.NewRegistration(participantID, raceID, "Instagram", "INSCRIPCION")
+		r, err := domain.NewRegistration(participantID, raceID, "Instagram")
 		if err != nil {
 			t.Fatalf("NewRegistration() unexpected error: %v", err)
 		}
@@ -79,17 +79,15 @@ func TestNewRegistration(t *testing.T) {
 		participantID uuid.UUID
 		raceID        uuid.UUID
 		referral      string
-		ticket        string
 		wantErr       error
 	}{
-		{name: "missing participant", participantID: uuid.Nil, raceID: raceID, referral: "IG", ticket: "T", wantErr: domain.ErrParticipantRequired},
-		{name: "missing race", participantID: participantID, raceID: uuid.Nil, referral: "IG", ticket: "T", wantErr: domain.ErrRaceRequired},
-		{name: "missing referral", participantID: participantID, raceID: raceID, referral: " ", ticket: "T", wantErr: domain.ErrReferralRequired},
-		{name: "missing ticket", participantID: participantID, raceID: raceID, referral: "IG", ticket: "", wantErr: domain.ErrTicketRequired},
+		{name: "missing participant", participantID: uuid.Nil, raceID: raceID, referral: "IG", wantErr: domain.ErrParticipantRequired},
+		{name: "missing race", participantID: participantID, raceID: uuid.Nil, referral: "IG", wantErr: domain.ErrRaceRequired},
+		{name: "missing referral", participantID: participantID, raceID: raceID, referral: " ", wantErr: domain.ErrReferralRequired},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := domain.NewRegistration(tt.participantID, tt.raceID, tt.referral, tt.ticket)
+			_, err := domain.NewRegistration(tt.participantID, tt.raceID, tt.referral)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("NewRegistration() error = %v, want %v", err, tt.wantErr)
 			}
@@ -99,7 +97,7 @@ func TestNewRegistration(t *testing.T) {
 
 func TestRegistrationConfirm(t *testing.T) {
 	newReg := func() *domain.Registration {
-		r, _ := domain.NewRegistration(uuid.New(), uuid.New(), "IG", "T")
+		r, _ := domain.NewRegistration(uuid.New(), uuid.New(), "IG")
 		return r
 	}
 
