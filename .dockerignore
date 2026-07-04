@@ -1,0 +1,9 @@
+.env
+.git
+.gitignore
+bin/
+.claude/
+.agents/
+.atl/
+*.md
+docker-compose.yml

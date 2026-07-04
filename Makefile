@@ -4,7 +4,11 @@
 -include .env
 export
 
+# goose reads GOOSE_DRIVER, GOOSE_DBSTRING and GOOSE_MIGRATION_DIR from the
+# environment (exported above), so the migrate recipes stay a single command.
+GOOSE_DRIVER = postgres
 GOOSE_DBSTRING = postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
+GOOSE_MIGRATION_DIR = migrations
 
 run:
 	go run ./cmd/api
