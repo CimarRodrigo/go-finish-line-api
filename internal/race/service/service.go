@@ -51,6 +51,16 @@ func (s *Service) ByID(ctx context.Context, id uuid.UUID) (*domain.Race, error) 
 	return r, nil
 }
 
+// ByStrapiID resolves a race from its Strapi documentId — the identifier the
+// public registration form speaks in.
+func (s *Service) ByStrapiID(ctx context.Context, strapiID string) (*domain.Race, error) {
+	r, err := s.repo.ByStrapiID(ctx, strapiID)
+	if err != nil {
+		return nil, fmt.Errorf("getting race by strapi id: %w", err)
+	}
+	return r, nil
+}
+
 func (s *Service) List(ctx context.Context) ([]domain.Race, error) {
 	races, err := s.repo.List(ctx)
 	if err != nil {

@@ -29,8 +29,8 @@ func (s *fakeService) Register(_ context.Context, in service.RegisterInput) (*se
 	dorsal := 1
 	return &service.Result{
 		Participant:  &domain.Participant{ID: uuid.New(), FirstNames: in.FirstNames, Email: in.Email},
-		Registration: &domain.Registration{ID: uuid.New(), RaceID: in.RaceID, Status: domain.StatusConfirmed, Dorsal: &dorsal},
-		Race:         &racedomain.Race{ID: in.RaceID},
+		Registration: &domain.Registration{ID: uuid.New(), RaceID: uuid.New(), Status: domain.StatusConfirmed, Dorsal: &dorsal},
+		Race:         &racedomain.Race{ID: uuid.New(), StrapiID: in.RaceDocumentID},
 	}, nil
 }
 
@@ -47,12 +47,12 @@ func setupRouter(svc *fakeService) *gin.Engine {
 	return r
 }
 
-func validBody(raceID string) string {
-	return `{"race_id":"` + raceID + `","first_names":"Amir","last_names":"Rojas","email":"amir@example.com","phone":"+59171234567","birth_date":"2000-06-09","gender":"M","referral_source":"Instagram"}`
+func validBody(documentID string) string {
+	return `{"race_document_id":"` + documentID + `","first_names":"Amir","last_names":"Rojas","email":"amir@example.com","phone":"+59171234567","birth_date":"2000-06-09","gender":"M","referral_source":"Instagram"}`
 }
 
 func TestRegister(t *testing.T) {
-	raceID := uuid.NewString()
+	documentID := "clx3k9a0b0001abcd"
 
 	tests := []struct {
 		name       string
@@ -60,15 +60,14 @@ func TestRegister(t *testing.T) {
 		serviceErr error
 		wantStatus int
 	}{
-		{name: "valid registration", body: validBody(raceID), wantStatus: http.StatusCreated},
+		{name: "valid registration", body: validBody(documentID), wantStatus: http.StatusCreated},
 		{name: "malformed json", body: `{`, wantStatus: http.StatusBadRequest},
-		{name: "missing fields", body: `{"race_id":"` + raceID + `"}`, wantStatus: http.StatusBadRequest},
-		{name: "invalid race id", body: validBody("not-a-uuid"), wantStatus: http.StatusBadRequest},
-		{name: "bad birth date", body: strings.Replace(validBody(raceID), "2000-06-09", "09-06-2000", 1), wantStatus: http.StatusBadRequest},
-		{name: "duplicate", body: validBody(raceID), serviceErr: domain.ErrAlreadyRegistered, wantStatus: http.StatusConflict},
-		{name: "race full", body: validBody(raceID), serviceErr: domain.ErrRaceFull, wantStatus: http.StatusConflict},
-		{name: "unknown race", body: validBody(raceID), serviceErr: racedomain.ErrNotFound, wantStatus: http.StatusNotFound},
-		{name: "domain validation", body: validBody(raceID), serviceErr: domain.ErrBirthDateInFuture, wantStatus: http.StatusBadRequest},
+		{name: "missing fields", body: `{"race_document_id":"` + documentID + `"}`, wantStatus: http.StatusBadRequest},
+		{name: "bad birth date", body: strings.Replace(validBody(documentID), "2000-06-09", "09-06-2000", 1), wantStatus: http.StatusBadRequest},
+		{name: "duplicate", body: validBody(documentID), serviceErr: domain.ErrAlreadyRegistered, wantStatus: http.StatusConflict},
+		{name: "race full", body: validBody(documentID), serviceErr: domain.ErrRaceFull, wantStatus: http.StatusConflict},
+		{name: "unknown race", body: validBody(documentID), serviceErr: racedomain.ErrNotFound, wantStatus: http.StatusNotFound},
+		{name: "domain validation", body: validBody(documentID), serviceErr: domain.ErrBirthDateInFuture, wantStatus: http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {

@@ -12,7 +12,7 @@ import (
 const dateLayout = "2006-01-02"
 
 type registerRequest struct {
-	RaceID         string `json:"race_id" binding:"required"`
+	RaceDocumentID string `json:"race_document_id" binding:"required"`
 	FirstNames     string `json:"first_names" binding:"required"`
 	LastNames      string `json:"last_names" binding:"required"`
 	Email          string `json:"email" binding:"required"`
@@ -26,7 +26,7 @@ type registerRequest struct {
 // plus their participation state (status + dorsal) for the frontend to show.
 type registrationResponse struct {
 	RegistrationID uuid.UUID  `json:"registration_id"`
-	RaceID         uuid.UUID  `json:"race_id"`
+	RaceDocumentID string     `json:"race_document_id"`
 	FirstNames     string     `json:"first_names"`
 	LastNames      string     `json:"last_names"`
 	Email          string     `json:"email"`
@@ -41,7 +41,7 @@ type registrationResponse struct {
 func toRegistrationResponse(res *service.Result) registrationResponse {
 	return registrationResponse{
 		RegistrationID: res.Registration.ID,
-		RaceID:         res.Registration.RaceID,
+		RaceDocumentID: res.Race.StrapiID,
 		FirstNames:     res.Participant.FirstNames,
 		LastNames:      res.Participant.LastNames,
 		Email:          res.Participant.Email,

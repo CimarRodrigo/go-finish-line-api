@@ -66,6 +66,17 @@ func (r *Repository) ByID(ctx context.Context, id uuid.UUID) (*domain.Race, erro
 	return toDomain(m), nil
 }
 
+func (r *Repository) ByStrapiID(ctx context.Context, strapiID string) (*domain.Race, error) {
+	var m raceModel
+	if err := r.db.WithContext(ctx).First(&m, "strapi_id = ?", strapiID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("selecting race by strapi id: %w", err)
+	}
+	return toDomain(m), nil
+}
+
 func (r *Repository) List(ctx context.Context) ([]domain.Race, error) {
 	var models []raceModel
 	if err := r.db.WithContext(ctx).Order("fecha ASC").Find(&models).Error; err != nil {

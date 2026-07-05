@@ -39,8 +39,12 @@ type RegistrationRepository interface {
 }
 
 // RaceFinder is the narrow view this module needs of the race module.
+// Registration comes in keyed by the Strapi documentId (the id the public
+// form holds), so it resolves via ByStrapiID; ByID resolves the internal race
+// for an existing registration during confirmation.
 type RaceFinder interface {
 	ByID(ctx context.Context, id uuid.UUID) (*racedomain.Race, error)
+	ByStrapiID(ctx context.Context, strapiID string) (*racedomain.Race, error)
 }
 
 // Notifier delivers registration notifications (the email module implements

@@ -47,6 +47,14 @@ func (r *fakeRepo) ByID(_ context.Context, id uuid.UUID) (*domain.Race, error) {
 	return nil, domain.ErrNotFound
 }
 
+func (r *fakeRepo) ByStrapiID(_ context.Context, strapiID string) (*domain.Race, error) {
+	race, ok := r.races[strapiID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	return race, nil
+}
+
 func (r *fakeRepo) List(_ context.Context) ([]domain.Race, error) {
 	out := make([]domain.Race, 0, len(r.races))
 	for _, race := range r.races {

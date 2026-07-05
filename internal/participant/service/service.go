@@ -38,9 +38,11 @@ func New(
 // maxConfirmAttempts bounds the optimistic dorsal-assignment retry loop.
 const maxConfirmAttempts = 5
 
-// RegisterInput carries the public registration form data.
+// RegisterInput carries the public registration form data. The race is
+// identified by its Strapi documentId — the only race id the public form
+// holds, since Strapi owns the registration flow.
 type RegisterInput struct {
-	RaceID         uuid.UUID
+	RaceDocumentID string
 	FirstNames     string
 	LastNames      string
 	Email          string
@@ -63,7 +65,7 @@ type Result struct {
 // current races are free — confirms it immediately. When payments arrive, the
 // Confirm call moves behind the payment flow; everything else stays as is.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, error) {
-	race, err := s.races.ByID(ctx, in.RaceID)
+	race, err := s.races.ByStrapiID(ctx, in.RaceDocumentID)
 	if err != nil {
 		return nil, fmt.Errorf("finding race: %w", err)
 	}
@@ -85,7 +87,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, erro
 		return nil, fmt.Errorf("upserting participant: %w", err)
 	}
 
-	reg, err := domain.NewRegistration(person.ID, in.RaceID, in.ReferralSource)
+	reg, err := domain.NewRegistration(person.ID, race.ID, in.ReferralSource)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +163,8 @@ func (s *Service) confirm(ctx context.Context, registrationID uuid.UUID, person 
 }
 
 // ByRace lists a race's registrations with their people — the admin report.
+// The race is identified by our internal race_id; the admin panel holds it
+// directly (it lists races from our API, not from Strapi).
 func (s *Service) ByRace(ctx context.Context, raceID uuid.UUID) ([]domain.RegistrationDetail, error) {
 	details, err := s.registrations.ByRace(ctx, raceID)
 	if err != nil {

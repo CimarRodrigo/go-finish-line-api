@@ -44,12 +44,6 @@ func (h *Handler) register(c *gin.Context) {
 		return
 	}
 
-	raceID, err := uuid.Parse(req.RaceID)
-	if err != nil {
-		httpx.BadRequest(c, "invalid race id")
-		return
-	}
-
 	birthDate, err := time.Parse(dateLayout, req.BirthDate)
 	if err != nil {
 		httpx.BadRequest(c, "birth_date must be YYYY-MM-DD")
@@ -57,7 +51,7 @@ func (h *Handler) register(c *gin.Context) {
 	}
 
 	res, err := h.svc.Register(c.Request.Context(), service.RegisterInput{
-		RaceID:         raceID,
+		RaceDocumentID: req.RaceDocumentID,
 		FirstNames:     req.FirstNames,
 		LastNames:      req.LastNames,
 		Email:          req.Email,

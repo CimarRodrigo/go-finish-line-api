@@ -17,5 +17,8 @@ type RaceRepository interface {
 	Upsert(ctx context.Context, r *domain.Race) (*domain.Race, error)
 	DeleteByStrapiID(ctx context.Context, strapiID string) error
 	ByID(ctx context.Context, id uuid.UUID) (*domain.Race, error)
+	// ByStrapiID looks a race up by its Strapi documentId — the id the public
+	// registration form holds.
+	ByStrapiID(ctx context.Context, strapiID string) (*domain.Race, error)
 	List(ctx context.Context) ([]domain.Race, error)
 }
