@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: FinishLine API
   description: Backend for footrace participant registration.
-  version: 0.5.0
+  version: 0.6.0
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -15,6 +15,8 @@ tags:
     description: Admin user management
   - name: registrations
     description: Public race registration and the admin report
+  - name: races
+    description: The registrable race list (we own it; synced from Strapi)
   - name: webhooks
     description: Inbound machine-to-machine events
 paths:
@@ -77,7 +79,7 @@ paths:
         - name: race_id
           in: query
           required: true
-          description: The race to report on
+          description: The race to report on, by our internal race_id
           schema:
             type: string
             format: uuid
@@ -133,6 +135,34 @@ paths:
           description: Invalid payload or missing entry id
         "401":
           description: Missing or wrong webhook secret
+  /api/v1/races:
+    get:
+      operationId: listRaces
+      summary: List registrable races (admin)
+      description: >-
+        Admin-only. The panel lists the races we mirror to obtain the
+        `race_id` it needs to pull the registrations report. Each row carries
+        our internal `race_id` and the Strapi `document_id`. Registration
+        itself uses the `document_id`, so the public form never calls this.
+      tags:
+        - races
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The registrable races, ordered by date
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Race"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/auth/login:
     post:
       operationId: login
@@ -443,10 +473,31 @@ components:
           type: string
           format: date-time
           example: "2026-06-13T22:16:56Z"
+    Race:
+      type: object
+      properties:
+        race_id:
+          type: string
+          format: uuid
+          description: Our internal id — use it to register and to pull the report
+        document_id:
+          type: string
+          description: The Strapi documentId — use it to fetch display content
+          example: clx3k9a0b0001abcd
+        name:
+          type: string
+          example: Carrera 10K
+        date:
+          type: string
+          format: date
+          example: "2026-08-15"
+        capacity:
+          type: integer
+          example: 500
     RegisterRequest:
       type: object
       required:
-        - race_id
+        - race_document_id
         - first_names
         - last_names
         - email
@@ -455,9 +506,10 @@ components:
         - gender
         - referral_source
       properties:
-        race_id:
+        race_document_id:
           type: string
-          format: uuid
+          description: The race's Strapi documentId (Strapi owns the registration flow)
+          example: clx3k9a0b0001abcd
         first_names:
           type: string
           example: Amir
@@ -488,9 +540,9 @@ components:
         registration_id:
           type: string
           format: uuid
-        race_id:
+        race_document_id:
           type: string
-          format: uuid
+          description: The race's Strapi documentId (echoes the request)
         first_names:
           type: string
         last_names:

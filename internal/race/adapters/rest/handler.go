@@ -17,21 +17,29 @@ import (
 type RaceService interface {
 	Sync(ctx context.Context, strapiID, name string, date time.Time, capacity int) (*domain.Race, error)
 	Remove(ctx context.Context, strapiID string) error
+	List(ctx context.Context) ([]domain.Race, error)
 }
 
 type Handler struct {
 	svc    RaceService
 	secret string
+	authMW gin.HandlerFunc
 }
 
-func NewHandler(svc RaceService, webhookSecret string) *Handler {
-	return &Handler{svc: svc, secret: webhookSecret}
+func NewHandler(svc RaceService, webhookSecret string, authMW gin.HandlerFunc) *Handler {
+	return &Handler{svc: svc, secret: webhookSecret, authMW: authMW}
 }
 
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	// Machine-to-machine endpoint: authenticated by a shared secret header,
 	// not by an admin JWT — Strapi is the caller, not a person.
 	r.POST("/webhooks/strapi", h.requireSecret, h.handleWebhook)
+
+	// Admin-only: the panel lists races to get the race_id it needs to pull the
+	// registrations report. Registration itself uses the Strapi documentId, so
+	// the public form never touches this endpoint. Each row carries our internal
+	// race_id plus the Strapi documentId.
+	r.GET("/races", h.authMW, h.handleList)
 }
 
 // requireSecret validates the shared secret in constant time so the check
@@ -86,4 +94,18 @@ func (h *Handler) handleWebhook(c *gin.Context) {
 		// retry events we deliberately ignore.
 		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
 	}
+}
+
+func (h *Handler) handleList(c *gin.Context) {
+	races, err := h.svc.List(c.Request.Context())
+	if err != nil {
+		httpx.RespondError(c, err)
+		return
+	}
+
+	out := make([]raceResponse, 0, len(races))
+	for _, r := range races {
+		out = append(out, toRaceResponse(r))
+	}
+	c.JSON(http.StatusOK, out)
 }

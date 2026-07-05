@@ -2,6 +2,7 @@ package rest_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +22,7 @@ type fakeService struct {
 	syncedName      string
 	syncedCapacity  int
 	removedStrapiID string
+	races           []domain.Race
 }
 
 func (s *fakeService) Sync(_ context.Context, strapiID, name string, _ time.Time, capacity int) (*domain.Race, error) {
@@ -38,12 +40,18 @@ func (s *fakeService) Remove(_ context.Context, strapiID string) error {
 	return nil
 }
 
+func (s *fakeService) List(_ context.Context) ([]domain.Race, error) {
+	return s.races, nil
+}
+
 const testSecret = "test-webhook-secret"
+
+func noopMW(c *gin.Context) { c.Next() }
 
 func setupRouter(svc *fakeService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	rest.NewHandler(svc, testSecret).RegisterRoutes(r)
+	rest.NewHandler(svc, testSecret, noopMW).RegisterRoutes(r)
 	return r
 }
 
@@ -168,6 +176,39 @@ func TestWebhookEvents(t *testing.T) {
 		rec := post(setupRouter(svc), testSecret, body)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body)
+		}
+	})
+}
+
+func TestListRaces(t *testing.T) {
+	t.Run("returns both ids per race", func(t *testing.T) {
+		id := uuid.New()
+		svc := &fakeService{races: []domain.Race{
+			{ID: id, StrapiID: "doc-1", Name: "Carrera 10K", Date: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), Capacity: 500},
+		}}
+		req := httptest.NewRequest(http.MethodGet, "/races", nil)
+		rec := httptest.NewRecorder()
+		setupRouter(svc).ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var out []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("not a JSON array: %v", err)
+		}
+		if len(out) != 1 || out[0]["race_id"] != id.String() || out[0]["document_id"] != "doc-1" || out[0]["date"] != "2026-08-15" {
+			t.Errorf("unexpected race list body: %s", rec.Body)
+		}
+	})
+
+	t.Run("empty list is a JSON array, not null", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/races", nil)
+		rec := httptest.NewRecorder()
+		setupRouter(&fakeService{}).ServeHTTP(rec, req)
+
+		if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
+			t.Errorf("empty list body = %q, want []", body)
 		}
 	})
 }
