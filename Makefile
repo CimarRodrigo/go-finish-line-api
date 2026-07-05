@@ -31,13 +31,13 @@ down:
 # Versioned migrations (production schema owner). Dev still uses gorm
 # AutoMigrate; these files must stay in sync with the gorm models.
 migrate-up:
-	goose -dir migrations postgres "$(GOOSE_DBSTRING)" up
+	goose up
 
 migrate-down:
-	goose -dir migrations postgres "$(GOOSE_DBSTRING)" down
+	goose down
 
 migrate-status:
-	goose -dir migrations postgres "$(GOOSE_DBSTRING)" status
+	goose status
 
 migrate-create:
-	goose -dir migrations create $(name) sql
+	goose create $(name) sql
