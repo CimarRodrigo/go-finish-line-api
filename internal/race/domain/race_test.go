@@ -12,22 +12,22 @@ func TestNew(t *testing.T) {
 	date := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name     string
-		strapiID string
-		raceName string
-		capacity int
-		wantErr  error
+		name       string
+		documentID string
+		raceName   string
+		capacity   int
+		wantErr    error
 	}{
-		{name: "valid race", strapiID: "doc-abc123", raceName: "Carrera 10K", capacity: 500},
-		{name: "missing strapi id", strapiID: "  ", raceName: "Carrera 10K", capacity: 500, wantErr: domain.ErrStrapiIDRequired},
-		{name: "missing name", strapiID: "doc-abc123", raceName: "", capacity: 500, wantErr: domain.ErrNameRequired},
-		{name: "zero capacity", strapiID: "doc-abc123", raceName: "Carrera 10K", capacity: 0, wantErr: domain.ErrCapacityInvalid},
-		{name: "negative capacity", strapiID: "doc-abc123", raceName: "Carrera 10K", capacity: -10, wantErr: domain.ErrCapacityInvalid},
+		{name: "valid race", documentID: "doc-abc123", raceName: "Carrera 10K", capacity: 500},
+		{name: "missing document id", documentID: "  ", raceName: "Carrera 10K", capacity: 500, wantErr: domain.ErrDocumentIDRequired},
+		{name: "missing name", documentID: "doc-abc123", raceName: "", capacity: 500, wantErr: domain.ErrNameRequired},
+		{name: "zero capacity", documentID: "doc-abc123", raceName: "Carrera 10K", capacity: 0, wantErr: domain.ErrCapacityInvalid},
+		{name: "negative capacity", documentID: "doc-abc123", raceName: "Carrera 10K", capacity: -10, wantErr: domain.ErrCapacityInvalid},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, err := domain.New(tt.strapiID, tt.raceName, date, tt.capacity)
+			r, err := domain.New(tt.documentID, tt.raceName, date, tt.capacity)
 
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {

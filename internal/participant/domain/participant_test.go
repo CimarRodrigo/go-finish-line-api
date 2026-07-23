@@ -16,6 +16,7 @@ func validParticipantParams() domain.ParticipantParams {
 		LastNames:  "Rojas",
 		Email:      "amir@example.com",
 		Phone:      "+591 71234567",
+		DocumentID: "1234567",
 		BirthDate:  time.Date(2000, 6, 9, 0, 0, 0, 0, time.UTC),
 		Gender:     "M",
 	}
@@ -32,6 +33,7 @@ func TestNewParticipant(t *testing.T) {
 		{name: "missing last names", mutate: func(p *domain.ParticipantParams) { p.LastNames = "" }, wantErr: domain.ErrLastNamesRequired},
 		{name: "invalid email", mutate: func(p *domain.ParticipantParams) { p.Email = "nope" }, wantErr: domain.ErrEmailInvalid},
 		{name: "invalid phone", mutate: func(p *domain.ParticipantParams) { p.Phone = "abc" }, wantErr: domain.ErrPhoneInvalid},
+		{name: "invalid document id", mutate: func(p *domain.ParticipantParams) { p.DocumentID = "ab" }, wantErr: domain.ErrDocumentIDInvalid},
 		{name: "future birth date", mutate: func(p *domain.ParticipantParams) { p.BirthDate = time.Now().AddDate(0, 6, 0) }, wantErr: domain.ErrBirthDateInFuture},
 		{name: "invalid gender", mutate: func(p *domain.ParticipantParams) { p.Gender = "Z" }, wantErr: domain.ErrGenderInvalid},
 	}
@@ -62,7 +64,7 @@ func TestNewRegistration(t *testing.T) {
 	participantID, raceID := uuid.New(), uuid.New()
 
 	t.Run("valid registration is pending without a dorsal", func(t *testing.T) {
-		r, err := domain.NewRegistration(participantID, raceID, "Instagram")
+		r, err := domain.NewRegistration(participantID, raceID, "Instagram", "10K · Con polera")
 		if err != nil {
 			t.Fatalf("NewRegistration() unexpected error: %v", err)
 		}
@@ -71,6 +73,19 @@ func TestNewRegistration(t *testing.T) {
 		}
 		if r.Dorsal != nil {
 			t.Error("a new registration must not have a dorsal")
+		}
+		if r.Modalidad != "10K · Con polera" {
+			t.Errorf("Modalidad = %q, want %q", r.Modalidad, "10K · Con polera")
+		}
+	})
+
+	t.Run("modalidad is optional — empty is stored as empty, not an error", func(t *testing.T) {
+		r, err := domain.NewRegistration(participantID, raceID, "Instagram", "")
+		if err != nil {
+			t.Fatalf("NewRegistration() unexpected error: %v", err)
+		}
+		if r.Modalidad != "" {
+			t.Errorf("Modalidad = %q, want empty", r.Modalidad)
 		}
 	})
 
@@ -87,7 +102,7 @@ func TestNewRegistration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := domain.NewRegistration(tt.participantID, tt.raceID, tt.referral)
+			_, err := domain.NewRegistration(tt.participantID, tt.raceID, tt.referral, "10K")
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("NewRegistration() error = %v, want %v", err, tt.wantErr)
 			}
@@ -97,7 +112,7 @@ func TestNewRegistration(t *testing.T) {
 
 func TestRegistrationConfirm(t *testing.T) {
 	newReg := func() *domain.Registration {
-		r, _ := domain.NewRegistration(uuid.New(), uuid.New(), "IG")
+		r, _ := domain.NewRegistration(uuid.New(), uuid.New(), "IG", "10K")
 		return r
 	}
 

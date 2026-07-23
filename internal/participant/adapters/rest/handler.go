@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"time"
 
@@ -22,19 +23,38 @@ type RegistrationService interface {
 
 type Handler struct {
 	svc    RegistrationService
+	secret string
 	authMW gin.HandlerFunc
 }
 
-// NewHandler takes the auth middleware so the admin report route can be
-// protected while registration stays public.
-func NewHandler(svc RegistrationService, authMW gin.HandlerFunc) *Handler {
-	return &Handler{svc: svc, authMW: authMW}
+// NewHandler takes the shared service secret (checked on the public
+// registration route, see requireSecret) and the auth middleware (used to
+// protect the admin report route).
+func NewHandler(svc RegistrationService, serviceSecret string, authMW gin.HandlerFunc) *Handler {
+	return &Handler{svc: svc, secret: serviceSecret, authMW: authMW}
 }
 
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	reg := r.Group("/registrations")
-	reg.POST("", h.register)            // public: the registration form
+	// Machine-to-machine endpoint: the only caller is our own Astro BFF, not
+	// a browser, so it is authenticated by a shared secret header rather
+	// than an admin JWT (mirrors the race module's Sanity webhook guard,
+	// see internal/race/adapters/rest/handler.go's requireSecret).
+	reg.POST("", h.requireSecret, h.register)
 	reg.GET("", h.authMW, h.listByRace) // admin report, requires a token
+}
+
+// requireSecret validates the shared BFF↔Go service secret in constant time
+// so the check leaks no timing information. Scoped to POST /registrations
+// only — the admin GET report keeps using the JWT auth middleware.
+func (h *Handler) requireSecret(c *gin.Context) {
+	got := c.GetHeader("X-Service-Secret")
+	if subtle.ConstantTimeCompare([]byte(got), []byte(h.secret)) != 1 {
+		httpx.Unauthorized(c, "invalid service secret")
+		c.Abort()
+		return
+	}
+	c.Next()
 }
 
 func (h *Handler) register(c *gin.Context) {
@@ -56,9 +76,11 @@ func (h *Handler) register(c *gin.Context) {
 		LastNames:      req.LastNames,
 		Email:          req.Email,
 		Phone:          req.Phone,
+		DocumentID:     req.DocumentID,
 		BirthDate:      birthDate,
 		Gender:         req.Gender,
 		ReferralSource: req.ReferralSource,
+		Modalidad:      req.Modalidad,
 	})
 	if err != nil {
 		httpx.RespondError(c, err)

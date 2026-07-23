@@ -13,6 +13,7 @@ var (
 	ErrLastNamesRequired    = apperr.New(apperr.KindValidation, "last names are required")
 	ErrEmailInvalid         = apperr.New(apperr.KindValidation, "email is invalid")
 	ErrPhoneInvalid         = apperr.New(apperr.KindValidation, "phone number is invalid")
+	ErrDocumentIDInvalid    = apperr.New(apperr.KindValidation, "document id is invalid")
 	ErrBirthDateInFuture    = apperr.New(apperr.KindValidation, "birth date cannot be in the future")
 	ErrBirthDateUnrealistic = apperr.New(apperr.KindValidation, "birth date is not realistic")
 	ErrGenderInvalid        = apperr.New(apperr.KindValidation, "gender must be M, F or X")

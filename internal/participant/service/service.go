@@ -39,17 +39,19 @@ func New(
 const maxConfirmAttempts = 5
 
 // RegisterInput carries the public registration form data. The race is
-// identified by its Strapi documentId — the only race id the public form
-// holds, since Strapi owns the registration flow.
+// identified by its documentId (the Sanity slug) — the only race id the
+// public form holds, since the native registration flow owns it.
 type RegisterInput struct {
 	RaceDocumentID string
 	FirstNames     string
 	LastNames      string
 	Email          string
 	Phone          string
+	DocumentID     string
 	BirthDate      time.Time
 	Gender         string
 	ReferralSource string
+	Modalidad      string
 }
 
 // Result is a completed registration: the person, their participation, and
@@ -65,7 +67,7 @@ type Result struct {
 // current races are free — confirms it immediately. When payments arrive, the
 // Confirm call moves behind the payment flow; everything else stays as is.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, error) {
-	race, err := s.races.ByStrapiID(ctx, in.RaceDocumentID)
+	race, err := s.races.ByDocumentID(ctx, in.RaceDocumentID)
 	if err != nil {
 		return nil, fmt.Errorf("finding race: %w", err)
 	}
@@ -75,6 +77,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, erro
 		LastNames:  in.LastNames,
 		Email:      in.Email,
 		Phone:      in.Phone,
+		DocumentID: in.DocumentID,
 		BirthDate:  in.BirthDate,
 		Gender:     in.Gender,
 	})
@@ -87,7 +90,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, erro
 		return nil, fmt.Errorf("upserting participant: %w", err)
 	}
 
-	reg, err := domain.NewRegistration(person.ID, race.ID, in.ReferralSource)
+	reg, err := domain.NewRegistration(person.ID, race.ID, in.ReferralSource, in.Modalidad)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +167,7 @@ func (s *Service) confirm(ctx context.Context, registrationID uuid.UUID, person 
 
 // ByRace lists a race's registrations with their people — the admin report.
 // The race is identified by our internal race_id; the admin panel holds it
-// directly (it lists races from our API, not from Strapi).
+// directly (it lists races from our own API, not from the CMS).
 func (s *Service) ByRace(ctx context.Context, raceID uuid.UUID) ([]domain.RegistrationDetail, error) {
 	details, err := s.registrations.ByRace(ctx, raceID)
 	if err != nil {

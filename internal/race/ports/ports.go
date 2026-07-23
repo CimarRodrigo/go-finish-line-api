@@ -11,14 +11,14 @@ import (
 // RaceRepository is the driven port for race persistence. Implementations
 // must return domain.ErrNotFound when a race does not exist.
 type RaceRepository interface {
-	// Upsert inserts the race or, if its StrapiID already exists, updates
+	// Upsert inserts the race or, if its DocumentID already exists, updates
 	// the snapshot fields (name, date, capacity). Idempotent by design:
 	// webhooks may be retried or duplicated.
 	Upsert(ctx context.Context, r *domain.Race) (*domain.Race, error)
-	DeleteByStrapiID(ctx context.Context, strapiID string) error
+	DeleteByDocumentID(ctx context.Context, documentID string) error
 	ByID(ctx context.Context, id uuid.UUID) (*domain.Race, error)
-	// ByStrapiID looks a race up by its Strapi documentId — the id the public
-	// registration form holds.
-	ByStrapiID(ctx context.Context, strapiID string) (*domain.Race, error)
+	// ByDocumentID looks a race up by its external id (currently the Sanity
+	// slug) — the id the public registration form holds.
+	ByDocumentID(ctx context.Context, documentID string) (*domain.Race, error)
 	List(ctx context.Context) ([]domain.Race, error)
 }

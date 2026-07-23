@@ -14,14 +14,18 @@ type Registration struct {
 	ParticipantID  uuid.UUID
 	RaceID         uuid.UUID
 	ReferralSource string
+	Modalidad      string
 	Status         Status
 	Dorsal         *int
 	CreatedAt      time.Time
 	ConfirmedAt    *time.Time
 }
 
-// NewRegistration builds a valid pending registration.
-func NewRegistration(participantID, raceID uuid.UUID, referralSource string) (*Registration, error) {
+// NewRegistration builds a valid pending registration. modalidad records the
+// distance/variant the runner already picked on the detail page (e.g. "10K ·
+// Con polera") — display data carried through from the form, not re-asked
+// here, so it is stored as given without its own validation rule.
+func NewRegistration(participantID, raceID uuid.UUID, referralSource, modalidad string) (*Registration, error) {
 	if participantID == uuid.Nil {
 		return nil, ErrParticipantRequired
 	}
@@ -39,6 +43,7 @@ func NewRegistration(participantID, raceID uuid.UUID, referralSource string) (*R
 		ParticipantID:  participantID,
 		RaceID:         raceID,
 		ReferralSource: referral,
+		Modalidad:      strings.TrimSpace(modalidad),
 		Status:         StatusPending,
 		CreatedAt:      time.Now().UTC(),
 	}, nil

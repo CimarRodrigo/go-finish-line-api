@@ -131,13 +131,14 @@ func run() error {
 
 	userModule := userrest.NewHandler(userSvc)
 	authModule := authrest.NewHandler(authSvc, cfg.Auth.RefreshTTL, cfg.IsProduction(), loginLimiter)
-	// The Strapi webhook authenticates with its own shared secret; the race
+	// The Sanity webhook authenticates with its own shared secret; the race
 	// handler guards its own admin-only /races route with the auth middleware,
 	// so the module stays in the public group.
-	raceModule := racerest.NewHandler(raceSvc, cfg.Strapi.WebhookSecret, authMW)
-	// Registration is public; the participant handler guards its own admin
-	// report route with the auth middleware.
-	participantModule := participantrest.NewHandler(participantSvc, authMW)
+	raceModule := racerest.NewHandler(raceSvc, cfg.Sanity.WebhookSecret, authMW)
+	// Registration is public but requires the shared BFF↔Go service secret
+	// (see participant handler's requireSecret); the participant handler
+	// guards its own admin report route with the auth middleware.
+	participantModule := participantrest.NewHandler(participantSvc, cfg.ServiceSecret, authMW)
 
 	srv := &http.Server{
 		Addr: ":" + cfg.AppPort,

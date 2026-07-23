@@ -33,7 +33,7 @@ func (r *ParticipantRepository) UpsertByEmail(ctx context.Context, p *domain.Par
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "email"}},
-			DoUpdates: clause.AssignmentColumns([]string{"nombres", "apellidos", "telefono", "fecha_nacimiento", "genero"}),
+			DoUpdates: clause.AssignmentColumns([]string{"nombres", "apellidos", "telefono", "documento_identidad", "fecha_nacimiento", "genero"}),
 		}).
 		Create(&m).Error
 	if err != nil {

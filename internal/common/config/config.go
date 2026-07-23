@@ -16,11 +16,21 @@ type Config struct {
 	AppPort string
 	DB      DBConfig
 	Auth    AuthConfig
-	Strapi  StrapiConfig
+	Sanity  SanityConfig
 	Email   EmailConfig
+	// ServiceSecret authenticates the frontend BFF (astro-finish-line-frontend)
+	// when it calls internal-only endpoints on this API — currently just
+	// POST /api/v1/registrations. It is a separate secret from
+	// Sanity.WebhookSecret (a different caller, a different route) but is
+	// checked with the same constant-time-compare pattern.
+	ServiceSecret string
 }
 
-type StrapiConfig struct {
+// SanityConfig holds the shared secret for the inbound Sanity webhook
+// (`/webhooks/sanity`) that syncs the local race snapshot. Sanity replaced
+// Strapi as the CMS of record; this config replaced the former
+// StrapiConfig/STRAPI_WEBHOOK_SECRET 1:1.
+type SanityConfig struct {
 	WebhookSecret string
 }
 
@@ -79,13 +89,14 @@ func Load() (*Config, error) {
 			AccessTTL:  getEnvDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 			RefreshTTL: getEnvDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour),
 		},
-		Strapi: StrapiConfig{
-			WebhookSecret: getEnv("STRAPI_WEBHOOK_SECRET", "dev-insecure-webhook-secret"),
+		Sanity: SanityConfig{
+			WebhookSecret: getEnv("SANITY_WEBHOOK_SECRET", "dev-insecure-webhook-secret"),
 		},
 		Email: EmailConfig{
 			ResendAPIKey: getEnv("RESEND_API_KEY", ""),
 			From:         getEnv("EMAIL_FROM", "no-reply@finishline.dev"),
 		},
+		ServiceSecret: getEnv("SERVICE_SECRET", "dev-insecure-service-secret"),
 	}, nil
 }
 

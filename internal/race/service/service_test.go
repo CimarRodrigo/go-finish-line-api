@@ -13,8 +13,8 @@ import (
 )
 
 type fakeRepo struct {
-	races           map[string]*domain.Race
-	deletedStrapiID string
+	races             map[string]*domain.Race
+	deletedDocumentID string
 }
 
 func newFakeRepo() *fakeRepo {
@@ -22,19 +22,19 @@ func newFakeRepo() *fakeRepo {
 }
 
 func (r *fakeRepo) Upsert(_ context.Context, race *domain.Race) (*domain.Race, error) {
-	if existing, ok := r.races[race.StrapiID]; ok {
+	if existing, ok := r.races[race.DocumentID]; ok {
 		existing.Name = race.Name
 		existing.Date = race.Date
 		existing.Capacity = race.Capacity
 		return existing, nil
 	}
-	r.races[race.StrapiID] = race
+	r.races[race.DocumentID] = race
 	return race, nil
 }
 
-func (r *fakeRepo) DeleteByStrapiID(_ context.Context, strapiID string) error {
-	r.deletedStrapiID = strapiID
-	delete(r.races, strapiID)
+func (r *fakeRepo) DeleteByDocumentID(_ context.Context, documentID string) error {
+	r.deletedDocumentID = documentID
+	delete(r.races, documentID)
 	return nil
 }
 
@@ -47,8 +47,8 @@ func (r *fakeRepo) ByID(_ context.Context, id uuid.UUID) (*domain.Race, error) {
 	return nil, domain.ErrNotFound
 }
 
-func (r *fakeRepo) ByStrapiID(_ context.Context, strapiID string) (*domain.Race, error) {
-	race, ok := r.races[strapiID]
+func (r *fakeRepo) ByDocumentID(_ context.Context, documentID string) (*domain.Race, error) {
+	race, ok := r.races[documentID]
 	if !ok {
 		return nil, domain.ErrNotFound
 	}

@@ -15,6 +15,7 @@ type Participant struct {
 	LastNames  string
 	Email      string
 	Phone      string
+	DocumentID string
 	BirthDate  time.Time
 	Gender     Gender
 	CreatedAt  time.Time
@@ -26,6 +27,7 @@ type ParticipantParams struct {
 	LastNames  string
 	Email      string
 	Phone      string
+	DocumentID string
 	BirthDate  time.Time
 	Gender     string
 }
@@ -53,6 +55,11 @@ func NewParticipant(p ParticipantParams) (*Participant, error) {
 		return nil, err
 	}
 
+	documentID, err := NormalizeDocumentID(p.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := ValidateBirthDate(p.BirthDate, time.Now()); err != nil {
 		return nil, err
 	}
@@ -68,6 +75,7 @@ func NewParticipant(p ParticipantParams) (*Participant, error) {
 		LastNames:  lastNames,
 		Email:      email,
 		Phone:      phone,
+		DocumentID: documentID,
 		BirthDate:  p.BirthDate,
 		Gender:     gender,
 		CreatedAt:  time.Now().UTC(),

@@ -90,7 +90,7 @@ func (f *fakeRaces) ByID(_ context.Context, _ uuid.UUID) (*racedomain.Race, erro
 	return f.race, f.err
 }
 
-func (f *fakeRaces) ByStrapiID(_ context.Context, _ string) (*racedomain.Race, error) {
+func (f *fakeRaces) ByDocumentID(_ context.Context, _ string) (*racedomain.Race, error) {
 	return f.race, f.err
 }
 
@@ -105,14 +105,14 @@ func (n *fakeNotifier) SendConfirmation(_ context.Context, _ *domain.Participant
 }
 
 func testRace(capacity int) *racedomain.Race {
-	return &racedomain.Race{ID: uuid.New(), StrapiID: "doc-" + uuid.NewString(), Name: "Carrera 10K", Capacity: capacity}
+	return &racedomain.Race{ID: uuid.New(), DocumentID: "doc-" + uuid.NewString(), Name: "Carrera 10K", Capacity: capacity}
 }
 
 func validInput(raceDocumentID string) service.RegisterInput {
 	return service.RegisterInput{
 		RaceDocumentID: raceDocumentID, FirstNames: "Amir", LastNames: "Rojas", Email: "amir@example.com",
-		Phone: "+59171234567", BirthDate: time.Date(2000, 6, 9, 0, 0, 0, 0, time.UTC),
-		Gender: "M", ReferralSource: "Instagram",
+		Phone: "+59171234567", DocumentID: "1234567", BirthDate: time.Date(2000, 6, 9, 0, 0, 0, 0, time.UTC),
+		Gender: "M", ReferralSource: "Instagram", Modalidad: "10K · Con polera",
 	}
 }
 
@@ -128,7 +128,7 @@ func TestRegister(t *testing.T) {
 		notifier := &fakeNotifier{}
 		svc, participants, _ := newService(race, notifier)
 
-		res, err := svc.Register(context.Background(), validInput(race.StrapiID))
+		res, err := svc.Register(context.Background(), validInput(race.DocumentID))
 		if err != nil {
 			t.Fatalf("Register() unexpected error: %v", err)
 		}
@@ -141,20 +141,26 @@ func TestRegister(t *testing.T) {
 		if notifier.sent != 1 {
 			t.Errorf("notifications = %d, want 1", notifier.sent)
 		}
+		if res.Participant.DocumentID != "1234567" {
+			t.Errorf("DocumentID = %q, want %q", res.Participant.DocumentID, "1234567")
+		}
+		if res.Registration.Modalidad != "10K · Con polera" {
+			t.Errorf("Modalidad = %q, want %q", res.Registration.Modalidad, "10K · Con polera")
+		}
 	})
 
 	t.Run("same person, two races: one participant, sequential dorsals", func(t *testing.T) {
 		notifier := &fakeNotifier{}
 		participants, registrations := newFakeParticipants(), newFakeRegistrations()
 		raceA, raceB := testRace(100), testRace(100)
-		races := &multiRaceFinder{races: map[string]*racedomain.Race{raceA.StrapiID: raceA, raceB.StrapiID: raceB}}
+		races := &multiRaceFinder{races: map[string]*racedomain.Race{raceA.DocumentID: raceA, raceB.DocumentID: raceB}}
 		svc := service.New(participants, registrations, races, notifier)
 
-		_, err := svc.Register(context.Background(), validInput(raceA.StrapiID))
+		_, err := svc.Register(context.Background(), validInput(raceA.DocumentID))
 		if err != nil {
 			t.Fatalf("Register(A) error: %v", err)
 		}
-		_, err = svc.Register(context.Background(), validInput(raceB.StrapiID))
+		_, err = svc.Register(context.Background(), validInput(raceB.DocumentID))
 		if err != nil {
 			t.Fatalf("Register(B) error: %v", err)
 		}
@@ -163,14 +169,33 @@ func TestRegister(t *testing.T) {
 		}
 	})
 
-	t.Run("duplicate registration in same race is rejected", func(t *testing.T) {
+	// Resolves the spec requirement design flagged as UNVERIFIED: per-race
+	// duplicate-by-email rejection. Confirmed in code (participants.email
+	// UNIQUE + registrations UNIQUE(race_id, participant_id) →
+	// ErrAlreadyRegistered → HTTP 409, see registration_repository.go and
+	// handler_test.go's "duplicate" case); this pins the service-level
+	// wiring with a table test that submits the SAME email twice for the
+	// SAME race under otherwise DIFFERENT identity fields, so the rejection
+	// is provably keyed by email — not by coincidental full-input equality.
+	t.Run("second registration with the same email for the same race is rejected (dedup key is email)", func(t *testing.T) {
 		race := testRace(100)
-		svc, _, _ := newService(race, &fakeNotifier{})
+		svc, participants, _ := newService(race, &fakeNotifier{})
 
-		_, _ = svc.Register(context.Background(), validInput(race.StrapiID))
-		_, err := svc.Register(context.Background(), validInput(race.StrapiID))
+		first := validInput(race.DocumentID)
+		_, err := svc.Register(context.Background(), first)
+		if err != nil {
+			t.Fatalf("first Register() unexpected error: %v", err)
+		}
+
+		second := validInput(race.DocumentID)
+		second.FirstNames, second.LastNames = "Otra", "Persona"
+		second.DocumentID = "7654321"
+		_, err = svc.Register(context.Background(), second)
 		if !errors.Is(err, domain.ErrAlreadyRegistered) {
 			t.Errorf("error = %v, want ErrAlreadyRegistered", err)
+		}
+		if len(participants.byEmail) != 1 {
+			t.Errorf("participants stored = %d, want 1 (same email must stay one person)", len(participants.byEmail))
 		}
 	})
 
@@ -178,7 +203,7 @@ func TestRegister(t *testing.T) {
 		race := testRace(0)
 		svc, _, _ := newService(race, &fakeNotifier{})
 
-		_, err := svc.Register(context.Background(), validInput(race.StrapiID))
+		_, err := svc.Register(context.Background(), validInput(race.DocumentID))
 		if !errors.Is(err, domain.ErrRaceFull) {
 			t.Errorf("error = %v, want ErrRaceFull", err)
 		}
@@ -201,7 +226,7 @@ func TestRegister(t *testing.T) {
 		race := testRace(100)
 		svc, participants, _ := newService(race, &fakeNotifier{})
 
-		in := validInput(race.StrapiID)
+		in := validInput(race.DocumentID)
 		in.BirthDate = time.Now().AddDate(1, 0, 0)
 		_, err := svc.Register(context.Background(), in)
 		if !errors.Is(err, domain.ErrBirthDateInFuture) {
@@ -216,7 +241,7 @@ func TestRegister(t *testing.T) {
 		race := testRace(100)
 		svc, _, _ := newService(race, &fakeNotifier{err: errors.New("smtp down")})
 
-		res, err := svc.Register(context.Background(), validInput(race.StrapiID))
+		res, err := svc.Register(context.Background(), validInput(race.DocumentID))
 		if err != nil {
 			t.Fatalf("Register() unexpected error: %v", err)
 		}
@@ -226,14 +251,14 @@ func TestRegister(t *testing.T) {
 	})
 }
 
-// multiRaceFinder resolves several races by their Strapi documentId for the
+// multiRaceFinder resolves several races by their documentId for the
 // multi-race test.
 type multiRaceFinder struct {
 	races map[string]*racedomain.Race
 }
 
-func (f *multiRaceFinder) ByStrapiID(_ context.Context, strapiID string) (*racedomain.Race, error) {
-	r, ok := f.races[strapiID]
+func (f *multiRaceFinder) ByDocumentID(_ context.Context, documentID string) (*racedomain.Race, error) {
+	r, ok := f.races[documentID]
 	if !ok {
 		return nil, racedomain.ErrNotFound
 	}

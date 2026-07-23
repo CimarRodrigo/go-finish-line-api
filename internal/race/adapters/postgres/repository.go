@@ -23,15 +23,15 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// Upsert inserts by strapi_id or refreshes the snapshot fields on conflict.
+// Upsert inserts by document_id or refreshes the snapshot fields on conflict.
 // The original id and created_at are preserved on update, so participant
-// references never break when Strapi re-sends a race.
+// references never break when Sanity re-sends a race.
 func (r *Repository) Upsert(ctx context.Context, race *domain.Race) (*domain.Race, error) {
 	m := toModel(race)
 
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "strapi_id"}},
+			Columns:   []clause.Column{{Name: "document_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"nombre", "fecha", "capacidad", "updated_at"}),
 		}).
 		Create(&m).Error
@@ -42,14 +42,14 @@ func (r *Repository) Upsert(ctx context.Context, race *domain.Race) (*domain.Rac
 	// Re-read: on conflict the row keeps its original id, not the one we
 	// generated for the insert attempt.
 	var saved raceModel
-	if err := r.db.WithContext(ctx).First(&saved, "strapi_id = ?", race.StrapiID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&saved, "document_id = ?", race.DocumentID).Error; err != nil {
 		return nil, fmt.Errorf("reloading upserted race: %w", err)
 	}
 	return toDomain(saved), nil
 }
 
-func (r *Repository) DeleteByStrapiID(ctx context.Context, strapiID string) error {
-	if err := r.db.WithContext(ctx).Delete(&raceModel{}, "strapi_id = ?", strapiID).Error; err != nil {
+func (r *Repository) DeleteByDocumentID(ctx context.Context, documentID string) error {
+	if err := r.db.WithContext(ctx).Delete(&raceModel{}, "document_id = ?", documentID).Error; err != nil {
 		return fmt.Errorf("deleting race: %w", err)
 	}
 	return nil
@@ -66,13 +66,13 @@ func (r *Repository) ByID(ctx context.Context, id uuid.UUID) (*domain.Race, erro
 	return toDomain(m), nil
 }
 
-func (r *Repository) ByStrapiID(ctx context.Context, strapiID string) (*domain.Race, error) {
+func (r *Repository) ByDocumentID(ctx context.Context, documentID string) (*domain.Race, error) {
 	var m raceModel
-	if err := r.db.WithContext(ctx).First(&m, "strapi_id = ?", strapiID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&m, "document_id = ?", documentID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrNotFound
 		}
-		return nil, fmt.Errorf("selecting race by strapi id: %w", err)
+		return nil, fmt.Errorf("selecting race by document id: %w", err)
 	}
 	return toDomain(m), nil
 }

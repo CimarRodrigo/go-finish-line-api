@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: FinishLine API
   description: Backend for footrace participant registration.
-  version: 0.6.0
+  version: 0.7.0
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -14,23 +14,36 @@ tags:
   - name: users
     description: Admin user management
   - name: registrations
-    description: Public race registration and the admin report
+    description: >-
+      Race registration (called by our own frontend BFF, not directly by
+      browsers — see the endpoint's X-Service-Secret requirement) and the
+      admin report
   - name: races
-    description: The registrable race list (we own it; synced from Strapi)
+    description: The registrable race list (we own it; synced from Sanity)
   - name: webhooks
     description: Inbound machine-to-machine events
 paths:
   /api/v1/registrations:
     post:
       operationId: register
-      summary: Register for a race (public)
+      summary: Register for a race (machine-to-machine, called by the frontend BFF)
       description: >-
-        Public endpoint for the registration form. Upserts the person by email
-        (one participant per email) and creates their registration for the
-        race. Free races are confirmed immediately, assigning a sequential
-        dorsal and sending a confirmation email.
+        Not a public browser endpoint — the only caller is our own Astro BFF,
+        authenticated by a shared secret in the `X-Service-Secret` header
+        (constant-time compared, same pattern as the Sanity webhook's
+        `X-Webhook-Secret`). Upserts the person by email (one participant per
+        email) and creates their registration for the race. Free races are
+        confirmed immediately, assigning a sequential dorsal and sending a
+        confirmation email.
       tags:
         - registrations
+      parameters:
+        - name: X-Service-Secret
+          in: header
+          required: true
+          description: Shared BFF↔Go secret (`SERVICE_SECRET` on this API, `BACKEND_SERVICE_SECRET` on the BFF)
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -52,6 +65,14 @@ paths:
                 $ref: "#/components/schemas/Error"
               example:
                 error: birth date cannot be in the future
+        "401":
+          description: Missing or wrong X-Service-Secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid service secret
         "404":
           description: The referenced race does not exist
           content:
@@ -104,16 +125,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/webhooks/strapi:
+  /api/v1/webhooks/sanity:
     post:
-      operationId: strapiWebhook
-      summary: Sync a race from Strapi
+      operationId: sanityWebhook
+      summary: Sync a race from Sanity
       description: >-
-        Machine-to-machine endpoint called by Strapi on race entry events.
-        Authenticated by a shared secret in the `X-Webhook-Secret` header (not
-        a user token). Create/update/publish events upsert the local race
-        reference; delete/unpublish events remove it. Unknown events are
-        acknowledged and ignored.
+        Machine-to-machine endpoint called by a Sanity GROQ-powered webhook on
+        race document changes. Authenticated by a shared secret in the
+        `X-Webhook-Secret` header (not a user token). `create`/`update`
+        operations upsert the local race reference; `delete` removes it.
+        Unknown/unmapped operations are acknowledged and ignored. This
+        replaces the former `/webhooks/strapi` endpoint — Strapi is fully
+        decommissioned as a CMS.
       tags:
         - webhooks
       parameters:
@@ -127,12 +150,12 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StrapiWebhook"
+              $ref: "#/components/schemas/SanityWebhook"
       responses:
         "200":
           description: Event processed (synced, removed, or ignored)
         "400":
-          description: Invalid payload or missing entry id
+          description: Invalid payload or missing slug
         "401":
           description: Missing or wrong webhook secret
   /api/v1/races:
@@ -142,8 +165,9 @@ paths:
       description: >-
         Admin-only. The panel lists the races we mirror to obtain the
         `race_id` it needs to pull the registrations report. Each row carries
-        our internal `race_id` and the Strapi `document_id`. Registration
-        itself uses the `document_id`, so the public form never calls this.
+        our internal `race_id` and the Sanity slug as `document_id`.
+        Registration itself uses the `document_id`, so the public form never
+        calls this.
       tags:
         - races
       security:
@@ -482,8 +506,8 @@ components:
           description: Our internal id — use it to register and to pull the report
         document_id:
           type: string
-          description: The Strapi documentId — use it to fetch display content
-          example: clx3k9a0b0001abcd
+          description: The Sanity slug — use it to fetch display content from Sanity
+          example: renacer
         name:
           type: string
           example: Carrera 10K
@@ -502,14 +526,15 @@ components:
         - last_names
         - email
         - phone
+        - document_id
         - birth_date
         - gender
         - referral_source
       properties:
         race_document_id:
           type: string
-          description: The race's Strapi documentId (Strapi owns the registration flow)
-          example: clx3k9a0b0001abcd
+          description: The race's Sanity slug (Sanity owns the registration content, not the registration flow)
+          example: renacer
         first_names:
           type: string
           example: Amir
@@ -523,6 +548,10 @@ components:
         phone:
           type: string
           example: "+59171234567"
+        document_id:
+          type: string
+          description: The runner's CI (cédula de identidad). Stored only — not validated against RENIEC/SEGIP, not enforced unique.
+          example: "1234567"
         birth_date:
           type: string
           format: date
@@ -534,6 +563,10 @@ components:
         referral_source:
           type: string
           example: Instagram
+        modalidad:
+          type: string
+          description: The distance/variant chosen on the detail page (e.g. "10K · Con polera"). Optional — display data, not validated.
+          example: "10K · Con polera"
     RegistrationResponse:
       type: object
       properties:
@@ -542,7 +575,7 @@ components:
           format: uuid
         race_document_id:
           type: string
-          description: The race's Strapi documentId (echoes the request)
+          description: The race's Sanity slug (echoes the request)
         first_names:
           type: string
         last_names:
@@ -552,9 +585,15 @@ components:
           format: email
         phone:
           type: string
+        document_id:
+          type: string
+          description: The runner's CI (cédula de identidad)
         gender:
           type: string
           enum: [M, F, X]
+        modalidad:
+          type: string
+          description: The distance/variant chosen on the detail page; empty when not provided
         status:
           type: string
           enum: [pendiente, confirmado]
@@ -600,34 +639,34 @@ components:
           type: string
           format: date-time
           nullable: true
-    StrapiWebhook:
+    SanityWebhook:
       type: object
+      description: >-
+        Shaped by the GROQ projection configured in the Studio webhook UI;
+        NOT yet verified against the real webhook config (see design doc,
+        open question) — flat race fields plus `operation` from Sanity's
+        `delta::operation()` GROQ helper.
       required:
-        - event
-        - entry
+        - operation
       properties:
-        event:
+        operation:
           type: string
-          example: entry.create
-        model:
+          enum: [create, update, delete]
+          example: create
+        slug:
           type: string
-          example: race
-        entry:
-          type: object
-          properties:
-            documentId:
-              type: string
-              description: Stable Strapi v5 id (preferred)
-            id:
-              type: integer
-              description: Numeric id (Strapi v4 fallback)
-            nombre:
-              type: string
-            fecha:
-              type: string
-              format: date
-            capacidad:
-              type: integer
+          description: The race's Sanity slug (external id)
+          example: renacer
+        title:
+          type: string
+          example: Carrera 10K
+        date:
+          type: string
+          format: date
+          example: "2026-08-15"
+        capacity:
+          type: integer
+          example: 500
     HealthStatus:
       type: object
       required:

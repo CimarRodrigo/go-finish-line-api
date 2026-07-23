@@ -2,7 +2,6 @@ package rest
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,38 +9,43 @@ import (
 	"finish-line/internal/race/domain"
 )
 
-// strapiWebhookPayload is the envelope Strapi sends on entry events. Only
-// the fields we care about are mapped; the entry carries the race content
-// type's fields.
-type strapiWebhookPayload struct {
-	Event string      `json:"event" binding:"required"`
-	Model string      `json:"model"`
-	Entry strapiEntry `json:"entry" binding:"required"`
+// sanityWebhookPayload is the payload expected from a Sanity GROQ-powered
+// webhook (Studio: API → Webhooks). Unlike Strapi's fixed entry envelope,
+// a Sanity webhook's shape is entirely defined by the GROQ projection
+// configured in the Studio webhook UI — this struct assumes a projection
+// that flattens the race document's own fields at the top level and adds
+// `operation` via Sanity's `delta::operation()` GROQ function, e.g.:
+//
+//	{
+//	  "operation": delta::operation(), // "create" | "update" | "delete"
+//	  "slug": slug.current,
+//	  "title": title,
+//	  "date": date,
+//	  "capacity": capacity
+//	}
+//
+// NOTE: this shape is NOT verified against a real Sanity webhook config yet
+// (see design doc, open question). Verify field names/nesting against the
+// actual Studio webhook setup before this goes live; adjust as needed.
+type sanityWebhookPayload struct {
+	Operation string `json:"operation" binding:"required"`
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	Date      string `json:"date"`
+	Capacity  int    `json:"capacity"`
 }
 
-type strapiEntry struct {
-	ID         int    `json:"id"`
-	DocumentID string `json:"documentId"`
-	Name       string `json:"nombre"`
-	Date       string `json:"fecha"`
-	Capacity   int    `json:"capacidad"`
-}
-
-// strapiID prefers the stable documentId (Strapi v5) and falls back to the
-// numeric id (v4) so both versions are supported.
-func (e strapiEntry) strapiID() string {
-	if e.DocumentID != "" {
-		return e.DocumentID
-	}
-	if e.ID != 0 {
-		return strconv.Itoa(e.ID)
-	}
-	return ""
+// externalID is the id we sync races by — the Sanity slug. Named generically
+// (not sanityID) because it flows straight into RaceService.Sync's
+// CMS-agnostic documentID parameter.
+func (p sanityWebhookPayload) externalID() string {
+	return p.Slug
 }
 
 // raceResponse is one race in the public list: both ids plus the snapshot
 // fields the frontend needs. race_id is our internal key (register + report);
-// document_id is the Strapi documentId (fetch display content from Strapi).
+// document_id is the external CMS id — the Sanity slug — used to fetch
+// display content from Sanity.
 type raceResponse struct {
 	RaceID     uuid.UUID `json:"race_id"`
 	DocumentID string    `json:"document_id"`
@@ -53,20 +57,21 @@ type raceResponse struct {
 func toRaceResponse(r domain.Race) raceResponse {
 	return raceResponse{
 		RaceID:     r.ID,
-		DocumentID: r.StrapiID,
+		DocumentID: r.DocumentID,
 		Name:       r.Name,
 		Date:       r.Date.Format("2006-01-02"),
 		Capacity:   r.Capacity,
 	}
 }
 
-// parseDate accepts Strapi date ("2006-01-02") and datetime (RFC3339) fields.
-func (e strapiEntry) parseDate() (time.Time, error) {
-	if t, err := time.Parse("2006-01-02", e.Date); err == nil {
+// parseDate accepts Sanity's `date` type ("2006-01-02") and falls back to
+// RFC3339 in case a projection ever forwards a full datetime field instead.
+func (p sanityWebhookPayload) parseDate() (time.Time, error) {
+	if t, err := time.Parse("2006-01-02", p.Date); err == nil {
 		return t, nil
 	}
-	if t, err := time.Parse(time.RFC3339, e.Date); err == nil {
+	if t, err := time.Parse(time.RFC3339, p.Date); err == nil {
 		return t, nil
 	}
-	return time.Time{}, fmt.Errorf("unrecognized date format %q", e.Date)
+	return time.Time{}, fmt.Errorf("unrecognized date format %q", p.Date)
 }

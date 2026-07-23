@@ -17,26 +17,26 @@ import (
 )
 
 type fakeService struct {
-	syncErr         error
-	syncedStrapiID  string
-	syncedName      string
-	syncedCapacity  int
-	removedStrapiID string
-	races           []domain.Race
+	syncErr           error
+	syncedDocumentID  string
+	syncedName        string
+	syncedCapacity    int
+	removedDocumentID string
+	races             []domain.Race
 }
 
-func (s *fakeService) Sync(_ context.Context, strapiID, name string, _ time.Time, capacity int) (*domain.Race, error) {
+func (s *fakeService) Sync(_ context.Context, externalID, name string, _ time.Time, capacity int) (*domain.Race, error) {
 	if s.syncErr != nil {
 		return nil, s.syncErr
 	}
-	s.syncedStrapiID = strapiID
+	s.syncedDocumentID = externalID
 	s.syncedName = name
 	s.syncedCapacity = capacity
-	return &domain.Race{ID: uuid.New(), StrapiID: strapiID, Name: name, Capacity: capacity}, nil
+	return &domain.Race{ID: uuid.New(), DocumentID: externalID, Name: name, Capacity: capacity}, nil
 }
 
-func (s *fakeService) Remove(_ context.Context, strapiID string) error {
-	s.removedStrapiID = strapiID
+func (s *fakeService) Remove(_ context.Context, externalID string) error {
+	s.removedDocumentID = externalID
 	return nil
 }
 
@@ -56,7 +56,7 @@ func setupRouter(svc *fakeService) *gin.Engine {
 }
 
 func post(router *gin.Engine, secret, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/strapi", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/sanity", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if secret != "" {
 		req.Header.Set("X-Webhook-Secret", secret)
@@ -67,7 +67,7 @@ func post(router *gin.Engine, secret, body string) *httptest.ResponseRecorder {
 }
 
 func TestWebhookAuth(t *testing.T) {
-	validBody := `{"event":"entry.create","model":"race","entry":{"documentId":"doc-1","nombre":"Carrera 10K","fecha":"2026-08-15","capacidad":500}}`
+	validBody := `{"operation":"create","slug":"renacer","title":"Carrera 10K","date":"2026-08-15","capacity":500}`
 
 	t.Run("missing secret is rejected", func(t *testing.T) {
 		svc := &fakeService{}
@@ -75,7 +75,7 @@ func TestWebhookAuth(t *testing.T) {
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", rec.Code)
 		}
-		if svc.syncedStrapiID != "" {
+		if svc.syncedDocumentID != "" {
 			t.Error("service was called despite invalid secret")
 		}
 	})
@@ -91,20 +91,20 @@ func TestWebhookAuth(t *testing.T) {
 func TestWebhookEvents(t *testing.T) {
 	t.Run("create syncs the race", func(t *testing.T) {
 		svc := &fakeService{}
-		body := `{"event":"entry.create","entry":{"documentId":"doc-1","nombre":"Carrera 10K","fecha":"2026-08-15","capacidad":500}}`
+		body := `{"operation":"create","slug":"renacer","title":"Carrera 10K","date":"2026-08-15","capacity":500}`
 		rec := post(setupRouter(svc), testSecret, body)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body)
 		}
-		if svc.syncedStrapiID != "doc-1" || svc.syncedCapacity != 500 {
-			t.Errorf("Sync called with (%q, %d), want (doc-1, 500)", svc.syncedStrapiID, svc.syncedCapacity)
+		if svc.syncedDocumentID != "renacer" || svc.syncedCapacity != 500 {
+			t.Errorf("Sync called with (%q, %d), want (renacer, 500)", svc.syncedDocumentID, svc.syncedCapacity)
 		}
 	})
 
 	t.Run("update also syncs", func(t *testing.T) {
 		svc := &fakeService{}
-		body := `{"event":"entry.update","entry":{"documentId":"doc-1","nombre":"Renombrada","fecha":"2026-08-15","capacidad":800}}`
+		body := `{"operation":"update","slug":"renacer","title":"Renombrada","date":"2026-08-15","capacity":800}`
 		rec := post(setupRouter(svc), testSecret, body)
 
 		if rec.Code != http.StatusOK {
@@ -117,53 +117,48 @@ func TestWebhookEvents(t *testing.T) {
 
 	t.Run("delete removes the race", func(t *testing.T) {
 		svc := &fakeService{}
-		body := `{"event":"entry.delete","entry":{"documentId":"doc-1"}}`
+		body := `{"operation":"delete","slug":"renacer"}`
 		rec := post(setupRouter(svc), testSecret, body)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
-		if svc.removedStrapiID != "doc-1" {
-			t.Errorf("removed strapi id = %q, want doc-1", svc.removedStrapiID)
+		if svc.removedDocumentID != "renacer" {
+			t.Errorf("removed document id = %q, want renacer", svc.removedDocumentID)
 		}
 	})
 
-	t.Run("numeric v4 id works as fallback", func(t *testing.T) {
+	t.Run("unknown operation is acknowledged, not failed", func(t *testing.T) {
 		svc := &fakeService{}
-		body := `{"event":"entry.create","entry":{"id":42,"nombre":"Carrera","fecha":"2026-08-15","capacidad":100}}`
+		body := `{"operation":"publish","slug":"renacer"}`
 		rec := post(setupRouter(svc), testSecret, body)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
-		if svc.syncedStrapiID != "42" {
-			t.Errorf("synced strapi id = %q, want 42", svc.syncedStrapiID)
-		}
-	})
-
-	t.Run("unknown event is acknowledged, not failed", func(t *testing.T) {
-		svc := &fakeService{}
-		body := `{"event":"media.create","entry":{"documentId":"doc-9"}}`
-		rec := post(setupRouter(svc), testSecret, body)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want 200", rec.Code)
-		}
-		if svc.syncedStrapiID != "" || svc.removedStrapiID != "" {
-			t.Error("service should not be called for ignored events")
+		if svc.syncedDocumentID != "" || svc.removedDocumentID != "" {
+			t.Error("service should not be called for ignored operations")
 		}
 	})
 
 	t.Run("invalid date is a 400", func(t *testing.T) {
-		body := `{"event":"entry.create","entry":{"documentId":"doc-1","nombre":"Carrera","fecha":"15/08/2026","capacidad":100}}`
+		body := `{"operation":"create","slug":"renacer","title":"Carrera","date":"15/08/2026","capacity":100}`
 		rec := post(setupRouter(&fakeService{}), testSecret, body)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
 		}
 	})
 
-	t.Run("entry without id is a 400", func(t *testing.T) {
-		body := `{"event":"entry.create","entry":{"nombre":"Carrera","fecha":"2026-08-15","capacidad":100}}`
+	t.Run("payload without slug is a 400", func(t *testing.T) {
+		body := `{"operation":"create","title":"Carrera","date":"2026-08-15","capacity":100}`
+		rec := post(setupRouter(&fakeService{}), testSecret, body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("missing operation is a 400", func(t *testing.T) {
+		body := `{"slug":"renacer","title":"Carrera","date":"2026-08-15","capacity":100}`
 		rec := post(setupRouter(&fakeService{}), testSecret, body)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -172,7 +167,7 @@ func TestWebhookEvents(t *testing.T) {
 
 	t.Run("domain validation surfaces as 400", func(t *testing.T) {
 		svc := &fakeService{syncErr: domain.ErrCapacityInvalid}
-		body := `{"event":"entry.create","entry":{"documentId":"doc-1","nombre":"Carrera","fecha":"2026-08-15","capacidad":0}}`
+		body := `{"operation":"create","slug":"renacer","title":"Carrera","date":"2026-08-15","capacity":0}`
 		rec := post(setupRouter(svc), testSecret, body)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body)
@@ -184,7 +179,7 @@ func TestListRaces(t *testing.T) {
 	t.Run("returns both ids per race", func(t *testing.T) {
 		id := uuid.New()
 		svc := &fakeService{races: []domain.Race{
-			{ID: id, StrapiID: "doc-1", Name: "Carrera 10K", Date: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), Capacity: 500},
+			{ID: id, DocumentID: "renacer", Name: "Carrera 10K", Date: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), Capacity: 500},
 		}}
 		req := httptest.NewRequest(http.MethodGet, "/races", nil)
 		rec := httptest.NewRecorder()
@@ -197,7 +192,7 @@ func TestListRaces(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 			t.Fatalf("not a JSON array: %v", err)
 		}
-		if len(out) != 1 || out[0]["race_id"] != id.String() || out[0]["document_id"] != "doc-1" || out[0]["date"] != "2026-08-15" {
+		if len(out) != 1 || out[0]["race_id"] != id.String() || out[0]["document_id"] != "renacer" || out[0]["date"] != "2026-08-15" {
 			t.Errorf("unexpected race list body: %s", rec.Body)
 		}
 	})
