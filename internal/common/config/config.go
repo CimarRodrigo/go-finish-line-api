@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -14,10 +15,14 @@ import (
 type Config struct {
 	Env     string
 	AppPort string
-	DB      DBConfig
-	Auth    AuthConfig
-	Sanity  SanityConfig
-	Email   EmailConfig
+	// FrontendBaseURL is the frontend origin (e.g. https://www.finishlinebolivia.com)
+	// used to build absolute links in emails (the logo). No default: it must be
+	// supplied per environment via FRONTEND_BASE_URL.
+	FrontendBaseURL string
+	DB              DBConfig
+	Auth            AuthConfig
+	Sanity          SanityConfig
+	Email           EmailConfig
 	// ServiceSecret authenticates the frontend BFF (astro-finish-line-frontend)
 	// when it calls internal-only endpoints on this API — currently just
 	// POST /api/v1/registrations. It is a separate secret from
@@ -73,9 +78,18 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// The frontend origin differs per environment and is never guessed here:
+	// a wrong value silently ships broken links in emails, so an unset
+	// variable fails at startup instead.
+	frontendBaseURL := strings.TrimRight(getEnv("FRONTEND_BASE_URL", ""), "/")
+	if frontendBaseURL == "" {
+		return nil, errors.New("FRONTEND_BASE_URL is required")
+	}
+
 	return &Config{
-		Env:     getEnv("APP_ENV", "development"),
-		AppPort: getEnv("APP_PORT", "8080"),
+		Env:             getEnv("APP_ENV", "development"),
+		AppPort:         getEnv("APP_PORT", "8080"),
+		FrontendBaseURL: frontendBaseURL,
 		DB: DBConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			User:     getEnv("DB_USER", "postgres"),

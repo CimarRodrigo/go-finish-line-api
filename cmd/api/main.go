@@ -124,7 +124,7 @@ func run() error {
 		participantpostgres.NewParticipantRepository(db),
 		participantpostgres.NewRegistrationRepository(db),
 		raceSvc,
-		participantnotification.NewConfirmationNotifier(emailSender),
+		participantnotification.NewConfirmationNotifier(emailSender, cfg.FrontendBaseURL),
 	)
 
 	authMW := authmiddleware.RequireAuth(authSvc)
