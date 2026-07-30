@@ -40,7 +40,11 @@ type registrationModel struct {
 	ReferralSource string    `gorm:"column:como_te_enteraste;type:text;not null"`
 	// Modalidad is additive and nullable: the distance/variant chosen on the
 	// detail page, display data only, no invariant depends on it.
-	Modalidad   string     `gorm:"column:modalidad;type:text"`
+	Modalidad string `gorm:"column:modalidad;type:text"`
+	// ShirtSize is additive and nullable too, but unlike Modalidad the domain
+	// validates it against the size chart. It sits here rather than on the
+	// participant because the size is chosen per race.
+	ShirtSize   string     `gorm:"column:talla_polera;type:text"`
 	Status      string     `gorm:"column:estado;type:text;not null"`
 	Dorsal      *int       `gorm:"column:dorsal;type:integer;uniqueIndex:uq_registration_race_dorsal"`
 	CreatedAt   time.Time  `gorm:"column:created_at;type:timestamptz;not null"`
@@ -84,6 +88,7 @@ func toRegistrationModel(r *domain.Registration) registrationModel {
 		RaceID:         r.RaceID,
 		ReferralSource: r.ReferralSource,
 		Modalidad:      r.Modalidad,
+		ShirtSize:      string(r.ShirtSize),
 		Status:         string(r.Status),
 		Dorsal:         r.Dorsal,
 		CreatedAt:      r.CreatedAt,
@@ -98,6 +103,7 @@ func toRegistrationDomain(m registrationModel) *domain.Registration {
 		RaceID:         m.RaceID,
 		ReferralSource: m.ReferralSource,
 		Modalidad:      m.Modalidad,
+		ShirtSize:      domain.ShirtSize(m.ShirtSize),
 		Status:         domain.Status(m.Status),
 		Dorsal:         m.Dorsal,
 		CreatedAt:      m.CreatedAt,

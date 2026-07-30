@@ -52,6 +52,7 @@ type RegisterInput struct {
 	Gender         string
 	ReferralSource string
 	Modalidad      string
+	ShirtSize      string
 }
 
 // Result is a completed registration: the person, their participation, and
@@ -85,12 +86,25 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, erro
 		return nil, err
 	}
 
+	// Validate the registration inputs before the upsert: the participant is a
+	// write, and a request we are going to reject must not leave a row behind.
+	regParams := domain.RegistrationParams{
+		RaceID:         race.ID,
+		ReferralSource: in.ReferralSource,
+		Modalidad:      in.Modalidad,
+		ShirtSize:      in.ShirtSize,
+	}
+	if err := regParams.Validate(); err != nil {
+		return nil, err
+	}
+
 	person, err = s.participants.UpsertByEmail(ctx, person)
 	if err != nil {
 		return nil, fmt.Errorf("upserting participant: %w", err)
 	}
 
-	reg, err := domain.NewRegistration(person.ID, race.ID, in.ReferralSource, in.Modalidad)
+	regParams.ParticipantID = person.ID
+	reg, err := domain.NewRegistration(regParams)
 	if err != nil {
 		return nil, err
 	}

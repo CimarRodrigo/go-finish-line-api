@@ -90,6 +90,8 @@ type reportRow struct {
 	Email          string     `gorm:"column:email"`
 	Phone          string     `gorm:"column:phone"`
 	Gender         string     `gorm:"column:gender"`
+	Modalidad      string     `gorm:"column:modalidad"`
+	ShirtSize      string     `gorm:"column:shirt_size"`
 	Status         string     `gorm:"column:status"`
 	Dorsal         *int       `gorm:"column:dorsal"`
 	CreatedAt      time.Time  `gorm:"column:created_at"`
@@ -102,6 +104,7 @@ func (r *RegistrationRepository) ByRace(ctx context.Context, raceID uuid.UUID) (
 		Table("registrations AS r").
 		Select(`r.id AS registration_id, p.nombres AS first_names, p.apellidos AS last_names,
 			p.email AS email, p.telefono AS phone, p.genero AS gender,
+			r.modalidad AS modalidad, r.talla_polera AS shirt_size,
 			r.estado AS status, r.dorsal AS dorsal, r.created_at AS created_at, r.confirmed_at AS confirmed_at`).
 		Joins("JOIN participants p ON p.id = r.participant_id").
 		Where("r.race_id = ?", raceID).
@@ -120,6 +123,8 @@ func (r *RegistrationRepository) ByRace(ctx context.Context, raceID uuid.UUID) (
 			Email:          row.Email,
 			Phone:          row.Phone,
 			Gender:         domain.Gender(row.Gender),
+			Modalidad:      row.Modalidad,
+			ShirtSize:      domain.ShirtSize(row.ShirtSize),
 			Status:         domain.Status(row.Status),
 			Dorsal:         row.Dorsal,
 			CreatedAt:      row.CreatedAt,

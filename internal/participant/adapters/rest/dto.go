@@ -26,6 +26,10 @@ type registerRequest struct {
 	// optional at the transport boundary since it is stored as a nullable
 	// column (see design decision).
 	Modalidad string `json:"modalidad"`
+	// ShirtSize is optional at the transport boundary — a modalidad without a
+	// shirt has none. The domain rejects any non-empty value outside the size
+	// chart, so the report can count sizes.
+	ShirtSize string `json:"shirt_size"`
 }
 
 // registrationResponse is what a successful registration returns: the person
@@ -40,6 +44,7 @@ type registrationResponse struct {
 	DocumentID     string     `json:"document_id"`
 	Gender         string     `json:"gender"`
 	Modalidad      string     `json:"modalidad"`
+	ShirtSize      string     `json:"shirt_size"`
 	Status         string     `json:"status"`
 	Dorsal         *int       `json:"dorsal"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -57,6 +62,7 @@ func toRegistrationResponse(res *service.Result) registrationResponse {
 		DocumentID:     res.Participant.DocumentID,
 		Gender:         string(res.Participant.Gender),
 		Modalidad:      res.Registration.Modalidad,
+		ShirtSize:      string(res.Registration.ShirtSize),
 		Status:         string(res.Registration.Status),
 		Dorsal:         res.Registration.Dorsal,
 		CreatedAt:      res.Registration.CreatedAt,
@@ -72,6 +78,8 @@ type reportRowResponse struct {
 	Email          string     `json:"email"`
 	Phone          string     `json:"phone"`
 	Gender         string     `json:"gender"`
+	Modalidad      string     `json:"modalidad"`
+	ShirtSize      string     `json:"shirt_size"`
 	Status         string     `json:"status"`
 	Dorsal         *int       `json:"dorsal"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -86,6 +94,8 @@ func toReportRow(d domain.RegistrationDetail) reportRowResponse {
 		Email:          d.Email,
 		Phone:          d.Phone,
 		Gender:         string(d.Gender),
+		Modalidad:      d.Modalidad,
+		ShirtSize:      string(d.ShirtSize),
 		Status:         string(d.Status),
 		Dorsal:         d.Dorsal,
 		CreatedAt:      d.CreatedAt,

@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: FinishLine API
   description: Backend for footrace participant registration.
-  version: 0.7.0
+  version: 0.8.0
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -567,6 +567,15 @@ components:
           type: string
           description: The distance/variant chosen on the detail page (e.g. "10K · Con polera"). Optional — display data, not validated.
           example: "10K · Con polera"
+        shirt_size:
+          type: string
+          enum: ["", XS, S, M, L, XL, XXL]
+          description: >-
+            Shirt size for THIS race — it lives on the registration, so the
+            same runner can pick a different size next time. Optional (a
+            modalidad without a shirt has none); any other value is a 400.
+            Case-insensitive and trimmed on the way in.
+          example: M
     RegistrationResponse:
       type: object
       properties:
@@ -594,6 +603,10 @@ components:
         modalidad:
           type: string
           description: The distance/variant chosen on the detail page; empty when not provided
+        shirt_size:
+          type: string
+          enum: ["", XS, S, M, L, XL, XXL]
+          description: Shirt size for this race; empty when the modalidad has no shirt
         status:
           type: string
           enum: [pendiente, confirmado]
@@ -626,6 +639,13 @@ components:
         gender:
           type: string
           enum: [M, F, X]
+        modalidad:
+          type: string
+          description: The distance/variant chosen; empty when not provided
+        shirt_size:
+          type: string
+          enum: ["", XS, S, M, L, XL, XXL]
+          description: Shirt size for this race; empty when the modalidad has no shirt
         status:
           type: string
           enum: [pendiente, confirmado]

@@ -81,6 +81,7 @@ func (h *Handler) register(c *gin.Context) {
 		Gender:         req.Gender,
 		ReferralSource: req.ReferralSource,
 		Modalidad:      req.Modalidad,
+		ShirtSize:      req.ShirtSize,
 	})
 	if err != nil {
 		httpx.RespondError(c, err)

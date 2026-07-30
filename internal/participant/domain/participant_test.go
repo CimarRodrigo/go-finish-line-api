@@ -63,8 +63,18 @@ func TestNewParticipant(t *testing.T) {
 func TestNewRegistration(t *testing.T) {
 	participantID, raceID := uuid.New(), uuid.New()
 
+	validRegistrationParams := func() domain.RegistrationParams {
+		return domain.RegistrationParams{
+			ParticipantID:  participantID,
+			RaceID:         raceID,
+			ReferralSource: "Instagram",
+			Modalidad:      "10K · Con polera",
+			ShirtSize:      "M",
+		}
+	}
+
 	t.Run("valid registration is pending without a dorsal", func(t *testing.T) {
-		r, err := domain.NewRegistration(participantID, raceID, "Instagram", "10K · Con polera")
+		r, err := domain.NewRegistration(validRegistrationParams())
 		if err != nil {
 			t.Fatalf("NewRegistration() unexpected error: %v", err)
 		}
@@ -77,10 +87,15 @@ func TestNewRegistration(t *testing.T) {
 		if r.Modalidad != "10K · Con polera" {
 			t.Errorf("Modalidad = %q, want %q", r.Modalidad, "10K · Con polera")
 		}
+		if r.ShirtSize != domain.ShirtSizeM {
+			t.Errorf("ShirtSize = %q, want M", r.ShirtSize)
+		}
 	})
 
 	t.Run("modalidad is optional — empty is stored as empty, not an error", func(t *testing.T) {
-		r, err := domain.NewRegistration(participantID, raceID, "Instagram", "")
+		p := validRegistrationParams()
+		p.Modalidad = ""
+		r, err := domain.NewRegistration(p)
 		if err != nil {
 			t.Fatalf("NewRegistration() unexpected error: %v", err)
 		}
@@ -89,20 +104,45 @@ func TestNewRegistration(t *testing.T) {
 		}
 	})
 
+	t.Run("shirt size is optional — a modalidad without a shirt records none", func(t *testing.T) {
+		p := validRegistrationParams()
+		p.ShirtSize = ""
+		r, err := domain.NewRegistration(p)
+		if err != nil {
+			t.Fatalf("NewRegistration() unexpected error: %v", err)
+		}
+		if r.ShirtSize != "" {
+			t.Errorf("ShirtSize = %q, want empty", r.ShirtSize)
+		}
+	})
+
+	t.Run("shirt size is normalized so the report can count it", func(t *testing.T) {
+		p := validRegistrationParams()
+		p.ShirtSize = " xl "
+		r, err := domain.NewRegistration(p)
+		if err != nil {
+			t.Fatalf("NewRegistration() unexpected error: %v", err)
+		}
+		if r.ShirtSize != domain.ShirtSizeXL {
+			t.Errorf("ShirtSize = %q, want XL", r.ShirtSize)
+		}
+	})
+
 	tests := []struct {
-		name          string
-		participantID uuid.UUID
-		raceID        uuid.UUID
-		referral      string
-		wantErr       error
+		name    string
+		mutate  func(*domain.RegistrationParams)
+		wantErr error
 	}{
-		{name: "missing participant", participantID: uuid.Nil, raceID: raceID, referral: "IG", wantErr: domain.ErrParticipantRequired},
-		{name: "missing race", participantID: participantID, raceID: uuid.Nil, referral: "IG", wantErr: domain.ErrRaceRequired},
-		{name: "missing referral", participantID: participantID, raceID: raceID, referral: " ", wantErr: domain.ErrReferralRequired},
+		{name: "missing participant", mutate: func(p *domain.RegistrationParams) { p.ParticipantID = uuid.Nil }, wantErr: domain.ErrParticipantRequired},
+		{name: "missing race", mutate: func(p *domain.RegistrationParams) { p.RaceID = uuid.Nil }, wantErr: domain.ErrRaceRequired},
+		{name: "missing referral", mutate: func(p *domain.RegistrationParams) { p.ReferralSource = " " }, wantErr: domain.ErrReferralRequired},
+		{name: "unknown shirt size", mutate: func(p *domain.RegistrationParams) { p.ShirtSize = "Mediana" }, wantErr: domain.ErrShirtSizeInvalid},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := domain.NewRegistration(tt.participantID, tt.raceID, tt.referral, "10K")
+			p := validRegistrationParams()
+			tt.mutate(&p)
+			_, err := domain.NewRegistration(p)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("NewRegistration() error = %v, want %v", err, tt.wantErr)
 			}
@@ -112,7 +152,9 @@ func TestNewRegistration(t *testing.T) {
 
 func TestRegistrationConfirm(t *testing.T) {
 	newReg := func() *domain.Registration {
-		r, _ := domain.NewRegistration(uuid.New(), uuid.New(), "IG", "10K")
+		r, _ := domain.NewRegistration(domain.RegistrationParams{
+			ParticipantID: uuid.New(), RaceID: uuid.New(), ReferralSource: "IG", Modalidad: "10K", ShirtSize: "M",
+		})
 		return r
 	}
 

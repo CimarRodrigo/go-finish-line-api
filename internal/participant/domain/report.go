@@ -16,8 +16,13 @@ type RegistrationDetail struct {
 	Email          string
 	Phone          string
 	Gender         Gender
-	Status         Status
-	Dorsal         *int
-	CreatedAt      time.Time
-	ConfirmedAt    *time.Time
+	// Modalidad and ShirtSize are what the report exists for on the
+	// merchandise side: the modalidad says whether that runner gets a shirt at
+	// all, and the size is what the admin counts to order them.
+	Modalidad   string
+	ShirtSize   ShirtSize
+	Status      Status
+	Dorsal      *int
+	CreatedAt   time.Time
+	ConfirmedAt *time.Time
 }

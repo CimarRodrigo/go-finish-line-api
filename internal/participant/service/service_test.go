@@ -112,7 +112,7 @@ func validInput(raceDocumentID string) service.RegisterInput {
 	return service.RegisterInput{
 		RaceDocumentID: raceDocumentID, FirstNames: "Amir", LastNames: "Rojas", Email: "amir@example.com",
 		Phone: "+59171234567", DocumentID: "1234567", BirthDate: time.Date(2000, 6, 9, 0, 0, 0, 0, time.UTC),
-		Gender: "M", ReferralSource: "Instagram", Modalidad: "10K · Con polera",
+		Gender: "M", ReferralSource: "Instagram", Modalidad: "10K · Con polera", ShirtSize: "M",
 	}
 }
 
@@ -146,6 +146,24 @@ func TestRegister(t *testing.T) {
 		}
 		if res.Registration.Modalidad != "10K · Con polera" {
 			t.Errorf("Modalidad = %q, want %q", res.Registration.Modalidad, "10K · Con polera")
+		}
+		if res.Registration.ShirtSize != domain.ShirtSizeM {
+			t.Errorf("ShirtSize = %q, want M", res.Registration.ShirtSize)
+		}
+	})
+
+	t.Run("an unknown shirt size is rejected before anything is persisted", func(t *testing.T) {
+		race := testRace(100)
+		svc, participants, _ := newService(race, &fakeNotifier{})
+
+		in := validInput(race.DocumentID)
+		in.ShirtSize = "Mediana"
+		_, err := svc.Register(context.Background(), in)
+		if !errors.Is(err, domain.ErrShirtSizeInvalid) {
+			t.Errorf("error = %v, want ErrShirtSizeInvalid", err)
+		}
+		if len(participants.byEmail) != 0 {
+			t.Error("nothing must be persisted when the shirt size is invalid")
 		}
 	})
 

@@ -55,7 +55,7 @@ func setupRouter(svc *fakeService) *gin.Engine {
 }
 
 func validBody(documentID string) string {
-	return `{"race_document_id":"` + documentID + `","first_names":"Amir","last_names":"Rojas","email":"amir@example.com","phone":"+59171234567","document_id":"1234567","birth_date":"2000-06-09","gender":"M","referral_source":"Instagram","modalidad":"10K · Con polera"}`
+	return `{"race_document_id":"` + documentID + `","first_names":"Amir","last_names":"Rojas","email":"amir@example.com","phone":"+59171234567","document_id":"1234567","birth_date":"2000-06-09","gender":"M","referral_source":"Instagram","modalidad":"10K · Con polera","shirt_size":"M"}`
 }
 
 func TestRegister(t *testing.T) {
@@ -72,6 +72,8 @@ func TestRegister(t *testing.T) {
 		{name: "missing fields", body: `{"race_document_id":"` + documentID + `"}`, wantStatus: http.StatusBadRequest},
 		{name: "missing participant document_id", body: strings.Replace(validBody(documentID), `"document_id":"1234567",`, "", 1), wantStatus: http.StatusBadRequest},
 		{name: "modalidad is optional and can be omitted", body: strings.Replace(validBody(documentID), `,"modalidad":"10K · Con polera"`, "", 1), wantStatus: http.StatusCreated},
+		{name: "shirt size is optional and can be omitted", body: strings.Replace(validBody(documentID), `,"shirt_size":"M"`, "", 1), wantStatus: http.StatusCreated},
+		{name: "unknown shirt size", body: validBody(documentID), serviceErr: domain.ErrShirtSizeInvalid, wantStatus: http.StatusBadRequest},
 		{name: "bad birth date", body: strings.Replace(validBody(documentID), "2000-06-09", "09-06-2000", 1), wantStatus: http.StatusBadRequest},
 		{name: "duplicate", body: validBody(documentID), serviceErr: domain.ErrAlreadyRegistered, wantStatus: http.StatusConflict},
 		{name: "race full", body: validBody(documentID), serviceErr: domain.ErrRaceFull, wantStatus: http.StatusConflict},
@@ -160,7 +162,11 @@ func TestListByRace(t *testing.T) {
 	t.Run("returns the report rows", func(t *testing.T) {
 		dorsal := 5
 		svc := &fakeService{details: []domain.RegistrationDetail{
-			{RegistrationID: uuid.New(), FirstNames: "Amir", Email: "amir@example.com", Status: domain.StatusConfirmed, Dorsal: &dorsal},
+			{
+				RegistrationID: uuid.New(), FirstNames: "Amir", Email: "amir@example.com",
+				Modalidad: "10K · Con polera", ShirtSize: domain.ShirtSizeL,
+				Status: domain.StatusConfirmed, Dorsal: &dorsal,
+			},
 		}}
 		router := setupRouter(svc)
 
@@ -177,6 +183,11 @@ func TestListByRace(t *testing.T) {
 		}
 		if len(out) != 1 || out[0]["dorsal"].(float64) != 5 {
 			t.Errorf("unexpected report body: %s", rec.Body)
+		}
+		// The merchandise columns are the reason the report carries them: the
+		// admin counts shirts from here.
+		if out[0]["modalidad"] != "10K · Con polera" || out[0]["shirt_size"] != "L" {
+			t.Errorf("report row is missing the merchandise fields: %s", rec.Body)
 		}
 	})
 

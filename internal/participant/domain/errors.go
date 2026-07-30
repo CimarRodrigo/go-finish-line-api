@@ -17,6 +17,7 @@ var (
 	ErrBirthDateInFuture    = apperr.New(apperr.KindValidation, "birth date cannot be in the future")
 	ErrBirthDateUnrealistic = apperr.New(apperr.KindValidation, "birth date is not realistic")
 	ErrGenderInvalid        = apperr.New(apperr.KindValidation, "gender must be M, F or X")
+	ErrShirtSizeInvalid     = apperr.New(apperr.KindValidation, "shirt size must be XS, S, M, L, XL or XXL")
 	ErrReferralRequired     = apperr.New(apperr.KindValidation, "referral source is required")
 	ErrDorsalInvalid        = apperr.New(apperr.KindValidation, "dorsal must be greater than zero")
 
