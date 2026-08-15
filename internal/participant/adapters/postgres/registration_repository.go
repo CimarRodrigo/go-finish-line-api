@@ -36,6 +36,13 @@ func (r *RegistrationRepository) Create(ctx context.Context, reg *domain.Registr
 	return nil
 }
 
+func (r *RegistrationRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	if err := r.db.WithContext(ctx).Delete(&registrationModel{}, "id = ?", id).Error; err != nil {
+		return fmt.Errorf("deleting registration: %w", err)
+	}
+	return nil
+}
+
 func (r *RegistrationRepository) ByID(ctx context.Context, id uuid.UUID) (*domain.Registration, error) {
 	var m registrationModel
 	if err := r.db.WithContext(ctx).First(&m, "id = ?", id).Error; err != nil {

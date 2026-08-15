@@ -43,6 +43,7 @@ type fakeRegistrations struct {
 	byID       map[uuid.UUID]*domain.Registration
 	pairs      map[string]bool
 	nextDorsal int
+	deleteErr  error
 }
 
 func newFakeRegistrations() *fakeRegistrations {
@@ -74,6 +75,19 @@ func (f *fakeRegistrations) NextDorsal(_ context.Context, _ uuid.UUID) (int, err
 func (f *fakeRegistrations) SaveConfirmation(_ context.Context, r *domain.Registration) error {
 	f.nextDorsal++
 	f.byID[r.ID] = r
+	return nil
+}
+
+// Delete mirrors the real repository: it frees the (race_id, participant_id)
+// pair too, so a test can prove the runner is able to try that race again.
+func (f *fakeRegistrations) Delete(_ context.Context, id uuid.UUID) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	if r, ok := f.byID[id]; ok {
+		delete(f.pairs, r.RaceID.String()+"|"+r.ParticipantID.String())
+		delete(f.byID, id)
+	}
 	return nil
 }
 
@@ -221,6 +235,95 @@ func TestRegister(t *testing.T) {
 		race := testRace(0)
 		svc, _, _ := newService(race, &fakeNotifier{})
 
+		_, err := svc.Register(context.Background(), validInput(race.DocumentID))
+		if !errors.Is(err, domain.ErrRaceFull) {
+			t.Errorf("error = %v, want ErrRaceFull", err)
+		}
+	})
+
+	// Creating and confirming are one action to the runner, so a full race must
+	// not leave the half-finished registration behind. Left there, the unique
+	// (race_id, participant_id) answers every retry with "already registered"
+	// — the wrong reason, and one that would outlive the race making more room.
+	t.Run("a full race leaves no registration behind", func(t *testing.T) {
+		race := testRace(0)
+		svc, _, registrations := newService(race, &fakeNotifier{})
+
+		_, err := svc.Register(context.Background(), validInput(race.DocumentID))
+		if !errors.Is(err, domain.ErrRaceFull) {
+			t.Fatalf("error = %v, want ErrRaceFull", err)
+		}
+		if len(registrations.byID) != 0 {
+			t.Errorf("registrations left behind = %d, want 0", len(registrations.byID))
+		}
+	})
+
+	t.Run("the runner can try again once the race makes room", func(t *testing.T) {
+		race := testRace(0)
+		svc, _, _ := newService(race, &fakeNotifier{})
+
+		if _, err := svc.Register(context.Background(), validInput(race.DocumentID)); !errors.Is(err, domain.ErrRaceFull) {
+			t.Fatalf("first attempt error = %v, want ErrRaceFull", err)
+		}
+
+		// The organiser raises the cap in the CMS and the same runner retries.
+		race.Capacity = 10
+		res, err := svc.Register(context.Background(), validInput(race.DocumentID))
+		if err != nil {
+			t.Fatalf("retry after the race grew: %v — a leftover row would report ErrAlreadyRegistered here", err)
+		}
+		if res.Registration.Status != domain.StatusConfirmed {
+			t.Errorf("status = %q, want confirmed", res.Registration.Status)
+		}
+	})
+
+	// The cleanup belongs to Register alone. Confirm is the payment seam: the
+	// registration it works on was created by an earlier call and is waiting
+	// for a payment, so a failure there must leave it exactly where it is.
+	t.Run("the payment seam never deletes a registration it did not create", func(t *testing.T) {
+		race := testRace(0) // full
+		participants, registrations := newFakeParticipants(), newFakeRegistrations()
+
+		person, err := domain.NewParticipant(domain.ParticipantParams{
+			FirstNames: "Amir", LastNames: "Rojas", Email: "amir@example.com",
+			Phone: "+59171234567", DocumentID: "1234567",
+			BirthDate: time.Date(2000, 6, 9, 0, 0, 0, 0, time.UTC), Gender: "M",
+		})
+		if err != nil {
+			t.Fatalf("building the participant: %v", err)
+		}
+		if _, err := participants.UpsertByEmail(context.Background(), person); err != nil {
+			t.Fatalf("storing the participant: %v", err)
+		}
+
+		reg, err := domain.NewRegistration(domain.RegistrationParams{
+			ParticipantID: person.ID, RaceID: race.ID, ReferralSource: "Instagram",
+		})
+		if err != nil {
+			t.Fatalf("building the registration: %v", err)
+		}
+		if err := registrations.Create(context.Background(), reg); err != nil {
+			t.Fatalf("storing the registration: %v", err)
+		}
+
+		svc := service.New(participants, registrations, &fakeRaces{race: race}, &fakeNotifier{})
+
+		if _, err := svc.Confirm(context.Background(), reg.ID); !errors.Is(err, domain.ErrRaceFull) {
+			t.Fatalf("error = %v, want ErrRaceFull", err)
+		}
+		if len(registrations.byID) != 1 {
+			t.Error("Confirm must leave the pending registration in place — it is awaiting payment, not abandoned")
+		}
+	})
+
+	t.Run("a failed cleanup still reports the real reason", func(t *testing.T) {
+		race := testRace(0)
+		participants, registrations := newFakeParticipants(), newFakeRegistrations()
+		registrations.deleteErr = errors.New("db down")
+		svc := service.New(participants, registrations, &fakeRaces{race: race}, &fakeNotifier{})
+
+		// The caller needs to hear "the race is full", not whatever went wrong
+		// while we were tidying up after ourselves.
 		_, err := svc.Register(context.Background(), validInput(race.DocumentID))
 		if !errors.Is(err, domain.ErrRaceFull) {
 			t.Errorf("error = %v, want ErrRaceFull", err)

@@ -33,6 +33,11 @@ type RegistrationRepository interface {
 	// SaveConfirmation persists a confirmed registration. A (race_id, dorsal)
 	// unique violation becomes domain.ErrDorsalTaken so the service can retry.
 	SaveConfirmation(ctx context.Context, r *domain.Registration) error
+	// Delete removes a registration. Register uses it to undo the row it just
+	// created when confirmation fails: the unique (race_id, participant_id)
+	// would otherwise leave the runner unable to try that race again, and a
+	// registration that never confirmed is not a registration.
+	Delete(ctx context.Context, id uuid.UUID) error
 	// ByRace returns a race's registrations joined with their people — the
 	// admin report.
 	ByRace(ctx context.Context, raceID uuid.UUID) ([]domain.RegistrationDetail, error)

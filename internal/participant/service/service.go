@@ -113,7 +113,28 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Result, erro
 		return nil, fmt.Errorf("creating registration: %w", err)
 	}
 
-	return s.confirm(ctx, reg.ID, person, race)
+	result, err := s.confirm(ctx, reg.ID, person, race)
+	if err != nil {
+		// Undo the row we just created. Confirmation and creation are one
+		// action from the runner's point of view, so a failure here must not
+		// leave a pending registration behind: the unique (race_id,
+		// participant_id) would then answer every retry with "already
+		// registered" instead of the real reason, and would keep answering it
+		// even after the race made more room.
+		//
+		// A compensating delete rather than a transaction: the dorsal retry
+		// loop reads and writes several times, and wrapping it would mean
+		// replaying the whole thing on every rollback.
+		if delErr := s.registrations.Delete(ctx, reg.ID); delErr != nil {
+			slog.Error("deleting unconfirmed registration",
+				"registration", reg.ID, "race", race.ID, "error", delErr)
+		}
+		// The original failure is what the caller needs to hear — a full race
+		// is a 409, and the cleanup is our problem, not theirs.
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // Confirm is the single confirmation point (the payment seam): free
