@@ -32,6 +32,9 @@ import (
 	racepostgres "finish-line/internal/race/adapters/postgres"
 	racerest "finish-line/internal/race/adapters/rest"
 	raceservice "finish-line/internal/race/service"
+	reportpostgres "finish-line/internal/report/adapters/postgres"
+	reportrest "finish-line/internal/report/adapters/rest"
+	reportservice "finish-line/internal/report/service"
 	userpostgres "finish-line/internal/user/adapters/postgres"
 	userrest "finish-line/internal/user/adapters/rest"
 	userservice "finish-line/internal/user/service"
@@ -127,6 +130,11 @@ func run() error {
 		participantnotification.NewConfirmationNotifier(emailSender, cfg.FrontendBaseURL),
 	)
 
+	// The report module is the read side behind the admin dashboard: it only
+	// queries and aggregates what the other modules wrote, so it takes a
+	// repository of its own rather than depending on their services.
+	reportSvc := reportservice.New(reportpostgres.NewRepository(db))
+
 	authMW := authmiddleware.RequireAuth(authSvc)
 
 	userModule := userrest.NewHandler(userSvc)
@@ -139,11 +147,15 @@ func run() error {
 	// (see participant handler's requireSecret); the participant handler
 	// guards its own admin report route with the auth middleware.
 	participantModule := participantrest.NewHandler(participantSvc, cfg.ServiceSecret, authMW)
+	// Every dashboard route is admin-only, but the handler applies the auth
+	// middleware itself — same as the race and participant modules — so all
+	// route guards stay visible in the module that owns the routes.
+	reportModule := reportrest.NewHandler(reportSvc, authMW)
 
 	srv := &http.Server{
 		Addr: ":" + cfg.AppPort,
 		Handler: server.New(logger, db, authMW, server.Modules{
-			Public:    []server.RouteRegistrar{authModule, raceModule, participantModule},
+			Public:    []server.RouteRegistrar{authModule, raceModule, participantModule, reportModule},
 			Protected: []server.RouteRegistrar{userModule},
 		}),
 		ReadTimeout:  10 * time.Second,

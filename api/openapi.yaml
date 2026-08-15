@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: FinishLine API
   description: Backend for footrace participant registration.
-  version: 0.8.0
+  version: 0.9.0
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -20,6 +20,16 @@ tags:
       admin report
   - name: races
     description: The registrable race list (we own it; synced from Sanity)
+  - name: reports
+    description: >-
+      The admin dashboard's metrics. One endpoint per question rather than a
+      single dashboard payload, so each widget filters and refreshes on its
+      own; a caller that wants them together composes them upstream. Every
+      one takes an optional race_id — absent means across all races — and
+      every one counts confirmed registrations only, so the panels reconcile
+      with each other.
+  - name: participants
+    description: The people who have registered, searchable and paginated
   - name: webhooks
     description: Inbound machine-to-machine events
 paths:
@@ -181,6 +191,204 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Race"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/reports/registrations-timeline:
+    get:
+      operationId: registrationsTimeline
+      summary: Registrations per day (admin)
+      description: >-
+        One point per day for the last `days` days, ending today, counting
+        confirmed registrations. Days with no registrations are included with
+        a zero count, so the chart shows the dips instead of drawing a
+        straight line across them.
+      tags:
+        - reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: >-
+            Window size, today included. Defaults to 14 and is capped at 365;
+            an absent or unreadable value falls back to the default rather
+            than failing, so a bad link cannot blank the dashboard.
+          schema:
+            type: integer
+            default: 14
+            example: 14
+        - $ref: "#/components/parameters/OptionalRaceId"
+      responses:
+        "200":
+          description: One point per day, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelinePoint"
+        "400":
+          description: race_id is not a uuid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/reports/referral-sources:
+    get:
+      operationId: referralSources
+      summary: How runners heard about the race (admin)
+      description: >-
+        Confirmed registrations grouped by referral source, most common first.
+      tags:
+        - reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OptionalRaceId"
+      responses:
+        "200":
+          description: Counts by source, descending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReferralCount"
+        "400":
+          description: race_id is not a uuid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/reports/shirt-sizes:
+    get:
+      operationId: shirtSizes
+      summary: Shirt sizes to order (admin)
+      description: >-
+        Confirmed registrations grouped by shirt size, in the size chart's
+        order rather than alphabetically. Registrations whose modalidad
+        includes no shirt are reported under an empty size instead of being
+        dropped, so the counts still add up to the registration total.
+      tags:
+        - reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OptionalRaceId"
+      responses:
+        "200":
+          description: Counts by size, in chart order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShirtSizeCount"
+        "400":
+          description: race_id is not a uuid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/participants:
+    get:
+      operationId: listParticipants
+      summary: The participants report (admin)
+      description: >-
+        Everyone who has registered, searchable, filterable and paginated,
+        with how many races each has run. That count is a runner's full
+        history: filtering by race narrows WHO is listed, not the number
+        beside their name. Like every dashboard widget it counts confirmed
+        registrations only — a pending one means the runner never got in — so
+        someone whose registration never completed shows zero.
+      tags:
+        - participants
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Matches first names, last names, email or CI
+          schema:
+            type: string
+            example: rojas
+        - $ref: "#/components/parameters/OptionalRaceId"
+        - name: gender
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [M, F, X]
+        - name: age_min
+          in: query
+          required: false
+          description: Age in completed years, inclusive
+          schema:
+            type: integer
+            example: 25
+        - name: age_max
+          in: query
+          required: false
+          description: Age in completed years, inclusive
+          schema:
+            type: integer
+            example: 35
+        - name: page
+          in: query
+          required: false
+          description: 1-based. Values below 1 are clamped rather than rejected.
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          description: Defaults to 25, capped at 100.
+          schema:
+            type: integer
+            default: 25
+      responses:
+        "200":
+          description: One page of participants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParticipantPage"
+        "400":
+          description: >-
+            An age that is not a whole number, a race_id that is not a uuid, a
+            gender outside the chart, or an age range that cannot exist
+            (negative, or a minimum above the maximum)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: age range is invalid
         "401":
           description: Missing or invalid access token
           content:
@@ -449,7 +657,99 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    OptionalRaceId:
+      name: race_id
+      in: query
+      required: false
+      description: >-
+        Our internal race id, from GET /races. Absent means across all races.
+      schema:
+        type: string
+        format: uuid
   schemas:
+    TimelinePoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          description: A plain day, not an instant — the chart plots days
+          example: "2026-08-15"
+        count:
+          type: integer
+          example: 3
+    ReferralCount:
+      type: object
+      properties:
+        source:
+          type: string
+          example: Instagram
+        count:
+          type: integer
+          example: 12
+    ShirtSizeCount:
+      type: object
+      properties:
+        size:
+          type: string
+          enum: ["", XS, S, M, L, XL, XXL]
+          description: Empty is the bucket for registrations with no shirt
+          example: M
+        count:
+          type: integer
+          example: 8
+    ParticipantRow:
+      type: object
+      properties:
+        participant_id:
+          type: string
+          format: uuid
+        first_names:
+          type: string
+        last_names:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        document_id:
+          type: string
+          description: The runner's CI
+        gender:
+          type: string
+          enum: [M, F, X]
+        birth_date:
+          type: string
+          format: date
+        age:
+          type: integer
+          description: Completed years today, derived rather than stored
+          example: 26
+        races_count:
+          type: integer
+          description: >-
+            Confirmed registrations across every race — a full history that
+            the race_id filter does not narrow
+          example: 3
+    ParticipantPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParticipantRow"
+        total:
+          type: integer
+          description: Rows matching the filter, across all pages
+          example: 130
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 25
     LoginRequest:
       type: object
       required:
